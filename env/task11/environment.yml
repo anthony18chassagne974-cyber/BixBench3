@@ -1,0 +1,41 @@
+# Task 11 (10.1016/j.crtox.2021.01.003) — preinstalled analysis environment.
+#
+# Goal: every required artifact can be produced with packages already present,
+# with no installation during the run. Built into the sandbox image as the conda
+# env `task11`; used with `micromamba run -n task11 Rscript script.R`.
+#
+# Pins come from the task prompt's Method Guidance (scripts/task_versions.py).
+# Bioconda only ships these exact builds for R 4.0 (checked against the bioconda
+# repodata on 2026-11-15):
+#   R 4.0.2          -> r-base=4.0.2                        exact
+#   piano 2.4.0      -> bioconductor-piano=2.4.0 (r40)      exact
+#   DESeq2 1.28.1    -> bioconda has 1.28.0 (r40) only      exact 1.28.1 via exact_pins.R
+#   biomaRt 2.44.1   -> bioconda has 2.44.0 (r40) only      exact 2.44.1 via exact_pins.R
+#   QuasR 1.26.0     -> bioconda builds 1.26.0 for R 3.6 ONLY (Bioconductor 3.10);
+#                       the R 4.0 build is 1.28.0 (Bioconductor 3.11). The prompt's
+#                       pins are not mutually satisfiable from binaries; exact_pins.R
+#                       tries a source build of 1.26.0 under R 4.0.2 and records the
+#                       outcome in /opt/task-env/MANIFEST.json.
+name: task11
+channels:
+  - conda-forge
+  - bioconda
+  - nodefaults
+dependencies:
+  - r-base=4.0.2
+  # Method Guidance pins (closest R 4.0 builds; see header)
+  - bioconductor-quasr=1.28.0
+  - bioconductor-rbowtie=1.28.0          # aligner used internally by QuasR
+  - bioconductor-deseq2=1.28.0
+  - bioconductor-biomart=2.44.0
+  - bioconductor-piano=2.4.0
+  # implicit requirements of the pipeline (not version-pinned by the prompt)
+  - r-readxl                              # curated DNA-damage gene-set workbook (.xlsx)
+  - r-data.table
+  - r-dplyr
+  - r-tidyr
+  - r-readr
+  - r-jsonlite
+  - r-biocmanager                         # exact_pins.R
+  - r-remotes
+  - samtools                              # inspecting QuasR alignments when debugging
