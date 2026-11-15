@@ -34,6 +34,7 @@ from inspect_ai.tool import Tool, ToolError, tool
 from inspect_ai.util import sandbox, store
 
 from .models import RuntimeCase
+from .review_memory import record_accepted, related_accepted
 
 _HERE = Path(__file__).parent
 SUMMARY_SCRIPT_PATH = _HERE / "sandbox_scripts" / "artifact_summary.py"
@@ -74,6 +75,9 @@ submit it unchanged and explain in `note` why it is already right.
 number {MAX_REJECTIONS + 1} of the same artifact is accepted without review.
 - Do not write required tables directly into `./outputs`; write `./outputs/METHODS.md` \
 directly (it is not reviewed). Resubmit an artifact whenever you change it.
+- The reviewer also compares each table with the most similar tables of this run it has \
+already accepted: the same kind of column (identifiers, symbols, contrast or direction \
+labels) must use the same format across artifacts.
 
 Reviews are logged in `./work/artifact_review.md`.
 """
@@ -92,7 +96,11 @@ and columns consistent with the specification (for example one count column per 
 replicate, or one row per annotated gene);
 - identifiers: row keys and sampled names in the format the specification and its example \
 identifiers describe (prefixes, version suffixes, symbols), and sampled names and values \
-that look coherent with the column they are in.
+that look coherent with the column they are in;
+- consistency: when summaries of artifacts you already accepted in this run are given, the same \
+kind of column (gene identifiers with or without version suffix, symbols, contrast, direction \
+or gene-set labels, column naming) must use the same format as in those artifacts. Flag a \
+format inconsistency; never require identical values, identical genes or identical row counts.
 
 Do not judge scientific results, expected values, gene lists or exact row counts the \
 specification does not determine; never guess them. If the agent's note answers an \
@@ -128,6 +136,7 @@ def reviewer_messages(
     summary: str,
     note: str,
     history: list[dict[str, Any]],
+    related: str = "",
 ) -> list[ChatMessage]:
     if len(task_prompt) > PROMPT_CHARS:
         task_prompt = task_prompt[:PROMPT_CHARS] + "\n<task description truncated>"
@@ -146,6 +155,11 @@ def reviewer_messages(
         f"# Submitted artifact specification\n\n{spec}",
         f"# Computed file summary\n\n{summary}",
     ]
+    if related:
+        parts.append(
+            "# Artifacts of this run you already accepted (most similar first; for format consistency only)"
+            f"\n\n{related}"
+        )
     if earlier:
         parts.append(f"# Your earlier feedback on this artifact\n\n{earlier}")
     parts.append(f"# Agent note\n\n{note.strip() or '(none)'}")
@@ -194,8 +208,12 @@ class ArtifactReviewer:
         copy: Callable[[str, str], Awaitable[str]],
         file_hash: Callable[[str], Awaitable[str | None]],
         append_log: Callable[[str], Awaitable[None]],
+        related: Callable[[dict[str, Any], str], Awaitable[tuple[str, list[str]]]] | None = None,
+        record: Callable[[dict[str, Any], str, str, int], Awaitable[None]] | None = None,
     ) -> None:
         self.state = state
+        self.related = related  # run memory: most similar accepted artifacts (past.dev)
+        self.record = record  # run memory: store an accepted artifact's summary
         self.summarize = summarize
         self.ask_model = ask_model
         self.copy = copy
@@ -217,17 +235,26 @@ class ArtifactReviewer:
         history = [entry for entry in log if entry["artifact_id"] == artifact_id]
         attempt = len(history) + 1
         feedback = ""
+        summary: str | None = None
+        related_ids: list[str] = []
         if attempt > MAX_REJECTIONS:
             verdict, accepted = "accepted without review", True
         else:
             try:
                 summary = await self.summarize(source, artifact, review_seed(artifact_id, attempt))
+                related_text = ""
+                if self.related is not None:
+                    try:
+                        related_text, related_ids = await self.related(artifact, summary)
+                    except Exception:  # memory must never block a review
+                        related_text, related_ids = "", []
                 answer = (await self.ask_model(reviewer_messages(
                     task_prompt=self.state.get(PROMPT_KEY, ""),
                     artifact=artifact,
                     summary=summary,
                     note=note,
                     history=history,
+                    related=related_text,
                 ))).strip()
                 accepted = parse_verdict(answer)
                 verdict = "accepted" if accepted else "rejected"
@@ -236,9 +263,16 @@ class ArtifactReviewer:
                 verdict, accepted = f"accepted, reviewer unavailable ({type(error).__name__})", True
         destination = sandbox_output_path(artifact)
         digest = await self.copy(source, destination) if accepted else None
+        if accepted and self.record is not None:
+            try:  # run memory: later reviews compare against this accepted table
+                if summary is None:
+                    summary = await self.summarize(source, artifact, review_seed(artifact_id, attempt))
+                await self.record(artifact, summary, verdict, attempt)
+            except Exception:
+                pass
         self.state[LOG_KEY] = [*log, {
             "artifact_id": artifact_id, "attempt": attempt, "verdict": verdict,
-            "path": source, "feedback": feedback, "note": note,
+            "path": source, "feedback": feedback, "note": note, "related": related_ids,
         }]
         if digest is not None:
             self.state[APPROVED_KEY] = {**self.state.get(APPROVED_KEY, {}), artifact_id: digest}
@@ -332,6 +366,7 @@ def _reviewer() -> ArtifactReviewer:
     return ArtifactReviewer(
         state=_StoreState(), summarize=_summarize, ask_model=_ask_model,
         copy=_copy, file_hash=_file_hash, append_log=_append_log,
+        related=related_accepted, record=record_accepted,  # run memory (past.dev)
     )
 
 
