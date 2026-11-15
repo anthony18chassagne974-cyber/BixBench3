@@ -58,11 +58,13 @@ PATTERNS = {
     },
     "homolog": {
         "key": r"^gene_id_\d+_key$",
-        "homolog_stable_id": r"^stable_id_\d+_r1$",
+        # homolog_stable_id is chosen from the data (see detect_homolog_gene_column):
+        # the dump has stable_id_<n>_r1/_r2/_r3 (gene / protein ids of the pair)
         "orthology_type": r"^description_\d+$",
         "confidence": r"^is_high_confidence_\d+$",
         "perc_id": r"^perc_id_\d+$",
-        "perc_id_r1": r"^perc_id_r1_\d+$",
+        "perc_id_r1": r"^perc_id_\d+_r1$",          # Ensembl 100 dump: perc_id_4015_r1
+        "homolog_name": r"^display_label_\d+_r1$",  # human gene name carried by the homolog table
     },
 }
 
@@ -95,6 +97,21 @@ def read_table(name: str, columns: list[str]) -> tuple[list[dict], str]:
         values = [None if v == r"\N" else v for v in line.split("\t")]
         rows.append(dict(zip(columns, values, strict=False)))
     return rows, digest
+
+
+def detect_homolog_gene_column(rows: list[dict], columns: list[str]) -> tuple[str, dict]:
+    """The human GENE id column is the stable_id_*_r* column whose values are ENSG ids."""
+    candidates = [c for c in columns if re.match(r"^stable_id_\d+_r\d+$", c)]
+    stats = {}
+    for c in candidates:
+        values = [r.get(c) for r in rows if r.get(c)]
+        stats[c] = {"non_null": len(values),
+                    "ENSG": sum(v.startswith("ENSG0") for v in values),
+                    "examples": sorted(set(values))[:2]}
+    best = max(candidates, key=lambda c: stats[c]["ENSG"], default=None)
+    if not best or stats[best]["ENSG"] == 0:
+        raise SystemExit(f"no stable_id column holds human ENSG gene ids: {stats}")
+    return best, stats
 
 
 def pick(columns: list[str], pattern: str, override: str | None, label: str, table: str) -> str | None:
@@ -137,12 +154,16 @@ def main() -> int:
         for t in (MOUSE_MAIN, homolog, HUMAN_MAIN):
             print(f"\n## {t}\n" + ", ".join(tables[t]))
         rows, _ = read_table(homolog, tables[homolog])
-        print(f"\n{homolog}: {len(rows)} rows; first 3:")
-        for r in rows[:3]:
+        with_homolog = [r for r in rows if any((r.get(c) or "").startswith("ENS") for c in tables[homolog] if c.startswith("stable_id"))]
+        print(f"\n{homolog}: {len(rows)} rows, {len(with_homolog)} with a homolog; 3 examples:")
+        for r in with_homolog[:3]:
             print({k: v for k, v in r.items() if v not in (None, "")})
+        col, stats = detect_homolog_gene_column(rows, tables[homolog])
+        print(f"\nhuman gene id column -> {col}")
+        print(json.dumps(stats, indent=2))
         return 0
 
-    over = {"homolog_stable_id": args.col_homolog_stable_id, "orthology_type": args.col_orthology_type,
+    over = {"orthology_type": args.col_orthology_type,
             "confidence": args.col_confidence, "perc_id": args.col_perc_id, "perc_id_r1": args.col_perc_id_r1}
     mcols = {k: pick(tables[MOUSE_MAIN], p, None, k, MOUSE_MAIN) for k, p in PATTERNS["main"].items()}
     hmcols = {k: pick(tables[HUMAN_MAIN], p, None, k, HUMAN_MAIN) for k, p in PATTERNS["main"].items()}
@@ -151,12 +172,17 @@ def main() -> int:
         missing = [k for k, v in mapping.items() if v is None]
         if missing:
             raise SystemExit(f"{label}: columns not found for {missing}; run --inspect")
-    if hcols["key"] is None or hcols["homolog_stable_id"] is None:
-        raise SystemExit("homolog table: key / homolog stable id not found; run --inspect")
+    if hcols["key"] is None:
+        raise SystemExit("homolog table: gene key column not found; run --inspect")
 
     mouse, mouse_sha = read_table(MOUSE_MAIN, tables[MOUSE_MAIN])
     human, human_sha = read_table(HUMAN_MAIN, tables[HUMAN_MAIN])
     homs, hom_sha = read_table(homolog, tables[homolog])
+    if args.col_homolog_stable_id:
+        hcols["homolog_stable_id"] = pick(tables[homolog], "", args.col_homolog_stable_id, "homolog_stable_id", homolog)
+        detection = {"override": args.col_homolog_stable_id}
+    else:
+        hcols["homolog_stable_id"], detection = detect_homolog_gene_column(homs, tables[homolog])
 
     mouse_by_key = {r[mcols["key"]]: r for r in mouse}
     human_name = {r[hmcols["stable_id"]]: r[hmcols["name"]] for r in human}
@@ -172,9 +198,10 @@ def main() -> int:
         for h in homs:
             hid = h.get(hcols["homolog_stable_id"])
             m = mouse_by_key.get(h.get(hcols["key"]))
-            if not hid or not m:
+            if not hid or not m or not hid.startswith("ENSG"):
                 continue
-            row = (m[mcols["stable_id"]], m[mcols["name"]] or "", hid, human_name.get(hid) or "",
+            hname = human_name.get(hid) or (h.get(hcols["homolog_name"]) if hcols.get("homolog_name") else "") or ""
+            row = (m[mcols["stable_id"]], m[mcols["name"]] or "", hid, hname,
                    h.get(hcols["orthology_type"]) or "" if hcols["orthology_type"] else "",
                    h.get(hcols["confidence"]) or "" if hcols["confidence"] else "",
                    h.get(hcols["perc_id"]) or "" if hcols["perc_id"] else "",
@@ -190,7 +217,8 @@ def main() -> int:
         "source": BASE,
         "reason": "Ensembl 100 archive BioMart (apr2020.archive.ensembl.org) retired: 301 -> /help/articles/archives",
         "tables": {MOUSE_MAIN: mouse_sha, HUMAN_MAIN: human_sha, homolog: hom_sha},
-        "column_mapping": {"mouse_main": mcols, "human_main": hmcols, "homolog": hcols},
+        "column_mapping": {"mouse_main": mcols, "human_main": hmcols, "homolog": hcols,
+                           "homolog_gene_column_detection": detection},
         "rows": {"mouse_genes": len(mouse), "homolog_rows": len(homs), "written": n},
         "output_sha256": hashlib.sha256(out_tsv.read_bytes()).hexdigest(),
     }
