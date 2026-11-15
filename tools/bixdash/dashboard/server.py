@@ -123,6 +123,10 @@ def make_handler(source: Source, token: str | None):
             try:
                 if not parts:
                     return self._send(200, (HERE / "index.html").read_bytes(), "text/html; charset=utf-8", extra)
+                if parts in (["comparisons"], ["comparisons.html"]):
+                    return self._send(200, (HERE / "comparisons.html").read_bytes(), "text/html; charset=utf-8", extra)
+                if parts == ["comparisons.js"]:
+                    return self._send(200, (HERE / "comparisons.js").read_bytes(), "text/javascript; charset=utf-8")
                 if parts == ["api", "runs"]:
                     return self._json([source.run(r) for r in source.run_ids()])
                 if len(parts) == 4 and parts[:2] == ["api", "run"] and parts[3] == "history":

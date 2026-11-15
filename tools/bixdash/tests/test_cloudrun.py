@@ -45,3 +45,28 @@ def test_public_mode_is_explicit_and_needs_no_token(server, tmp_path):
     request = object.__new__(handler)
     request.headers = {}
     assert request._authorized({})
+
+
+def test_comparison_pages_preserve_auth_and_serve_expected_content(server, tmp_path):
+    import threading
+    import urllib.request
+    import urllib.error
+    from http.server import ThreadingHTTPServer
+
+    http = ThreadingHTTPServer(('127.0.0.1', 0), server.make_handler(server.Source(str(tmp_path)), 'test-token'))
+    thread = threading.Thread(target=http.serve_forever, daemon=True)
+    thread.start()
+    try:
+        root = f'http://127.0.0.1:{http.server_port}'
+        for path, expected, content_type in [('/comparisons', b'Score vs API cost', 'text/html'), ('/comparisons.js', b'totalTokens', 'text/javascript')]:
+            with pytest.raises(urllib.error.HTTPError) as error:
+                urllib.request.urlopen(root + path)
+            assert error.value.code == 401
+            with urllib.request.urlopen(root + path + '?token=test-token') as response:
+                assert response.status == 200
+                assert response.headers['Content-Type'].startswith(content_type)
+                assert expected in response.read()
+    finally:
+        http.shutdown()
+        http.server_close()
+        thread.join(timeout=2)

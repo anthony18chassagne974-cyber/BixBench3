@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="icon" href="data:,">
+<title>Bixdash · comparisons</title>
+<style>
+:root{color-scheme:light;--bg:#f6f6f4;--surface:#fcfcfb;--text:#151515;--muted:#686760;--border:#e2e1dc;--grid:#e7e6e1}
+@media(prefers-color-scheme:dark){:root{color-scheme:dark;--bg:#121211;--surface:#1a1a19;--text:#f0efec;--muted:#a8a79d;--border:#33332f;--grid:#2c2c29}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:14px/1.5 system-ui,sans-serif}header,main{max-width:1280px;margin:auto;padding:20px 24px}header{display:flex;align-items:center;gap:24px;flex-wrap:wrap;padding-bottom:4px}h1{font-size:20px;margin:0}h2{font-size:15px;margin:0 0 8px}nav{display:flex;gap:16px}a{color:inherit;text-underline-offset:4px}nav a[aria-current]{font-weight:700}.muted{color:var(--muted)}.intro{max-width:900px}.controls{display:flex;gap:18px;align-items:end;flex-wrap:wrap;padding:16px 0}label{display:flex;flex-direction:column;gap:5px;font-size:13px}label.check{flex-direction:row;align-items:center;padding:9px 0}select,button{font:inherit;padding:8px 12px;background:var(--surface);color:var(--text);border:1px solid var(--border);border-radius:6px}button{cursor:pointer}.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:20px}.panel{padding:18px;background:var(--surface);border:1px solid var(--border);border-radius:10px;min-width:0}.chart svg{width:100%;display:block}.legend{display:flex;gap:12px;flex-wrap:wrap;margin:12px 0 18px}.legend span{display:flex;align-items:center;gap:6px;font-size:12px}.dot{width:10px;height:10px;border-radius:50%;display:inline-block}.note{font-size:12px;color:var(--muted);margin:6px 0}.empty{padding:40px 12px;color:var(--muted);min-height:250px;display:grid;place-content:center;text-align:center}.table-scroll{overflow-x:auto;margin-top:24px}table{border-collapse:collapse;width:100%;min-width:850px}th,td{text-align:left;padding:10px;border-bottom:1px solid var(--border);font-size:13px}th{color:var(--muted);font-weight:500}td.num{text-align:right;font-variant-numeric:tabular-nums}.tag{font-size:11px;padding:2px 7px;border:1px solid var(--border);border-radius:20px;white-space:nowrap}.detail{padding:10px 12px;background:var(--bg);border-radius:6px;font-size:12px;min-height:40px;margin-top:8px}.status{margin-left:auto;font-size:12px;color:var(--muted)}circle.point{cursor:crosshair}circle.point:focus{outline:none;stroke:var(--text);stroke-width:3}@media(max-width:760px){.grid{grid-template-columns:1fr}header,main{padding:16px}.status{margin-left:0}.controls{gap:12px}}
+</style>
+<script src="/comparisons.js" defer></script>
+</head>
+<body>
+<header><h1>BixBench3 · Comparisons</h1><nav aria-label="Dashboard pages"><a href="/">Runs</a><a href="/comparisons" aria-current="page">Comparisons</a></nav><span class="status" id="refresh-status" role="status">Loading…</span></header>
+<main>
+<p class="intro">Compare scientific artifact scores against the budget spent by each run. Each point is one run's latest available score. Use the same task and evaluation scope for meaningful comparisons.</p>
+<div class="controls">
+<label>Task<select id="task" aria-label="Task"></select></label>
+<label>Owner<select id="owner" aria-label="Owner"></select></label>
+<label>Third chart X axis<select id="budget"><option value="calls">Model calls</option><option value="tokens">Total tokens</option></select></label>
+<label class="check"><input type="checkbox" id="partial">Include intermediate scores</label>
+<button id="refresh" type="button">Refresh</button>
+</div>
+<p class="note">Cost = estimated analyst API cost, excluding GCP and judges. Tokens = uncached input + cached input + output; reasoning tokens are already included in output. Model calls are API generations, not tool calls.</p>
+<p class="note">Unscored runs are listed below, never plotted as zero. Live grading is disabled for the current baselines, so their score points will appear after final grading. Different tasks are not directly comparable.</p>
+<div id="legend" class="legend"></div>
+<div class="grid">
+<section class="panel"><h2>Score vs API cost</h2><div id="cost-chart" class="chart"></div></section>
+<section class="panel"><h2>Score vs elapsed time</h2><div id="time-chart" class="chart"></div></section>
+<section class="panel"><h2 id="budget-heading">Score vs model calls</h2><div id="budget-chart" class="chart"></div></section>
+<section class="panel"><h2>Reading these plots</h2><p>Higher scores and lower budgets are better. Filled circles are final scores. Hollow circles are intermediate scores, when enabled.</p><p>Hover or focus a point for its run name and exact values. Budget values come from the same snapshot as the score; a run without a required budget value is omitted from that chart.</p><p>Points do not imply a learning curve. No intermediate scores are invented from the final result, and no line connects separate experiments.</p><p class="muted" id="coverage"></p></section>
+</div>
+<div class="table-scroll"><table><thead><tr><th>Run</th><th>Task / owner</th><th>Score</th><th>API cost</th><th>Elapsed</th><th>Model calls</th><th>Total tokens</th><th>Status</th></tr></thead><tbody id="run-table"></tbody></table></div>
+</main>
+</body></html>

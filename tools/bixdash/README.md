@@ -208,3 +208,15 @@ and follows the runner's existing submission-failure cleanup behavior.
 The team dashboard has moved to Cloud Run; the old `bixdash-web` VM is stopped.
 See [TEAM_SETUP.md](../../TEAM_SETUP.md) for the URL, public/protected access modes,
 container/deployment instructions and shared 6-vCPU experiment profile.
+
+## Comparison plots
+
+Open `/comparisons` from the Runs / Comparisons navigation. The page plots one
+latest scored point per run: scientific score versus estimated analyst API cost,
+elapsed minutes, and model-call count or total tokens. Filter by task and owner;
+task 11 is selected initially when present. Filled points are final scores;
+intermediate scores are opt-in and hollow. Unscored runs remain in the table,
+never as zero-score points. Missing budget metrics exclude a run only from the
+corresponding plot. No intermediate scores or trajectories are fabricated from
+final results. Compare the same task and evaluation scope; API cost excludes
+compute/judges. Tokens include cached inputs and exclude double-counting reasoning.
