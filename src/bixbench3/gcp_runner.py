@@ -2469,12 +2469,23 @@ def selected_environment(keys: Sequence[str]) -> dict[str, str]:
     return values
 
 
+def extra_environment_keys() -> tuple[str, ...]:
+    """Extra secret names an experiment's harness needs on the VM (launcher env only).
+
+    Set BIXBENCH3_EXTRA_ENV_KEYS to a comma-separated list of variable names, for example
+    PAST_API_KEY. They are streamed to the VM and redacted from results like provider keys.
+    """
+    names = [name.strip() for name in os.environ.get("BIXBENCH3_EXTRA_ENV_KEYS", "").split(",")]
+    return tuple(name for name in names if name)
+
+
 def required_environment_keys(model: ResolvedModel) -> tuple[str, ...]:
     return tuple(
         dict.fromkeys(
             (
                 *model.required_environment_keys,
                 *_PROCESS_JUDGE_ENVIRONMENT_KEYS,
+                *extra_environment_keys(),
             )
         )
     )

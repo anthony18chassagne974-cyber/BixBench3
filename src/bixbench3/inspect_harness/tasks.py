@@ -9,6 +9,7 @@ from bixbench3.inspect_harness.dataset import (
     DEFAULT_TIME_LIMIT_SECONDS,
     load_cases_dataset,
 )
+from bixbench3.inspect_harness.pastdev_memory import read_process_memory, with_memory_writeback
 from bixbench3.inspect_harness.scorers import output_collection
 from bixbench3.inspect_harness.solvers import (
     bixbench3_agent,
@@ -36,8 +37,8 @@ def bixbench3_cases(
             case_ids,
             time_limit_seconds=TIME_LIMIT_SECONDS,
         ),
-        setup=prepare_case_workspace(),
-        solver=bixbench3_agent(),
+        setup=[prepare_case_workspace(), read_process_memory()],
+        solver=with_memory_writeback(bixbench3_agent()),
         scorer=output_collection(),
         sandbox=("docker", compose_path),
         message_limit=MESSAGE_LIMIT,
