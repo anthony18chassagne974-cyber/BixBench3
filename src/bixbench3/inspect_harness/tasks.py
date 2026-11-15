@@ -6,11 +6,12 @@ from pathlib import Path
 from inspect_ai import Task, task
 from inspect_ai.solver import chain
 
+from bixbench3.inspect_harness.condition_note import condition_note_setup
 from bixbench3.inspect_harness.dataset import (
     DEFAULT_TIME_LIMIT_SECONDS,
     load_cases_dataset,
 )
-from bixbench3.inspect_harness.condition_note import condition_note_setup
+from bixbench3.inspect_harness.run_memory import run_memory_setup
 from bixbench3.inspect_harness.scorers import output_collection
 from bixbench3.inspect_harness.solvers import (
     bixbench3_agent,
@@ -38,7 +39,7 @@ def bixbench3_cases(
             case_ids,
             time_limit_seconds=TIME_LIMIT_SECONDS,
         ),
-        setup=chain(prepare_case_workspace(), condition_note_setup()),
+        setup=chain(prepare_case_workspace(), condition_note_setup(), run_memory_setup()),
         solver=bixbench3_agent(),
         scorer=output_collection(),
         sandbox=("docker", compose_path),

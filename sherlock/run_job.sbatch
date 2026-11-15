@@ -49,7 +49,7 @@ echo "[sherlock] job $SLURM_JOB_ID on $(hostname) partition ${SLURM_JOB_PARTITIO
 test -f "$DATA_DIR/../.bixbench3-ready.json" || { echo "task data not staged: $DATA_DIR (run setup.sbatch)"; exit 2; }
 
 # --- secrets (only the keys the run needs; same file format as the GCP /dev/shm/bixbench3.env)
-(umask 077 && sed -n 's/^export //; /^OPENAI_API_KEY=/p' "$HOME/.bixbench3_secrets" > "$SECRETS/bixbench3.env")
+(umask 077 && sed -n 's/^export //; /^OPENAI_API_KEY=/p; /^PAST_API_KEY=/p' "$HOME/.bixbench3_secrets" > "$SECRETS/bixbench3.env")
 test -s "$SECRETS/bixbench3.env" || { echo "OPENAI_API_KEY missing from ~/.bixbench3_secrets"; exit 2; }
 
 # --- source tree = runtime checkout (HEAD) + optional committed harness overlay (as on GCP)
