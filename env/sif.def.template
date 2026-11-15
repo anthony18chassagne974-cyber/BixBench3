@@ -1,0 +1,19 @@
+Bootstrap: localimage
+From: @BASE_SIF@
+
+%labels
+    bixbench3.task_env @TASK@
+
+%files
+    env/@TASK@ /opt/task-env
+    env/link_path.sh /opt/task-env/link_path.sh
+
+%post
+    set -eu
+    export MAMBA_ROOT_PREFIX=/opt/conda
+    EXACT_PINS=@EXACT_PINS@ bash /opt/task-env/build.sh
+    bash /opt/task-env/link_path.sh
+
+%environment
+    export MAMBA_ROOT_PREFIX=/opt/conda
+    export PATH=/opt/task-env/bin:$PATH

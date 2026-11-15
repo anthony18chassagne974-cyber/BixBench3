@@ -1,0 +1,22 @@
+# Task 9 (10.1186/s12915-024-01879-0) — R side. Bioconductor 3.12 / R 4.0.
+# Every prompt pin has an exact R 4.0 binary on bioconda (checked 2026-11-15):
+#   DESeq2 1.30.1, clusterProfiler 3.18.1.
+# org.Hs.eg.db / GO.db are NOT pinned by the prompt: we take the releases of the same
+# Bioconductor 3.12 (org.Hs.eg.db 3.12.0, GO.db 3.12.1). GO enrichment results depend on
+# this choice; the embedded GO source dates are written to /opt/task-env/MANIFEST.json.
+name: task9
+channels:
+  - conda-forge
+  - bioconda
+  - nodefaults
+dependencies:
+  - r-base=4.0
+  - bioconductor-deseq2=1.30.1
+  - bioconductor-clusterprofiler=3.18.1
+  - bioconductor-org.hs.eg.db=3.12.0
+  - bioconductor-go.db=3.12.1
+  - bioconductor-rtracklayer          # read the staged GENCODE v38 GTF (gene_id -> gene_name), offline
+  - r-data.table
+  - r-dplyr
+  - r-readr
+  - r-jsonlite

@@ -47,7 +47,7 @@ obtained them through `request_web_access` (approved).
 | `fetch_ensembl100_orthologs.py` | Ensembl 100 mouse->human orthologs from the release-100 BioMart dump (`--inspect` to check columns first) |
 | `exact_pins.R` | upgrades to the exact prompt versions at image build time, writes `MANIFEST.json` |
 | `verify_env.R` | runs every pipeline step on tiny synthetic data with preinstalled packages only |
-| `Dockerfile` | layer on top of `bixbench3-sandbox:<version>` |
+| `build.sh`, `path.env` | build steps / PATH entries used by `env/Dockerfile` (GCP) and `env/build_sif.sh` (Sherlock) |
 | `available_packages.task11.yaml` | section that tells the agent the env exists (prompt change) |
 
 ## Build and verify (builder VM with Docker and network)
@@ -58,8 +58,8 @@ python3 env/task11/fetch_ensembl100_orthologs.py --inspect
 ```
 
 ```bash
-docker build --build-arg BASE=bixbench3-sandbox:1.0.0 --build-arg EXACT_PINS=1 \
-  -t bixbench3-sandbox:1.0.0-task11env -f env/task11/Dockerfile .
+docker build --build-arg BASE=bixbench3-sandbox:1.0.0 --build-arg TASK=task11 --build-arg EXACT_PINS=1 \
+  -t bixbench3-sandbox:1.0.0-task11env -f env/Dockerfile .
 docker run --rm --network none bixbench3-sandbox:1.0.0-task11env \
   micromamba run -n task11 Rscript /opt/task-env/verify_env.R          # must print ALL STEPS PASS
 docker run --rm bixbench3-sandbox:1.0.0-task11env cat /opt/task-env/MANIFEST.json
@@ -69,6 +69,8 @@ docker run --rm bixbench3-sandbox:1.0.0-task11env \
 
 `--network none` is the point: it proves the steps need nothing from the internet.
 
+On Sherlock (Apptainer), see [`env/README.md`](../README.md): `bash env/build_sif.sh task11`.
+
 ## Rules for using it in an experiment
 
 - It is an **environment change** (and, with `available_packages.task11.yaml`, a
@@ -77,5 +79,5 @@ docker run --rm bixbench3-sandbox:1.0.0-task11env \
   `task11.lock.txt` (exact conda build list), `verify_build.json`.
 - Built only from the task **prompt** (what the agent receives). It contains no task
   data, no reference outputs and no ground truth.
-- Wiring it into the runner's machine image (`setup-runtime`) is a follow-up: the image
-  build currently uses `sandbox/Dockerfile` only.
+- On Sherlock the run uses it through `BB3_SANDBOX_SIF` (see `env/README.md`); on GCP,
+  wiring it into the runner's machine image (`setup-runtime`) is still a follow-up.

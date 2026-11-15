@@ -69,7 +69,16 @@ if [ "$OVERLAY" = "True" ]; then
 fi
 
 # --- images and jail on node-local disk
-cp "$IMAGES/bixbench3-sandbox_1.0.0.sif" "$IMAGES/bixbench3-network-gateway_1.0.0.sif" "$JOB/"
+# BB3_SANDBOX_SIF: optional task-environment SIF built by env/build_sif.sh (default: the stock sandbox).
+# It is copied under the stock job-local name so the rest of the job is unchanged; its identity is recorded.
+SANDBOX_SIF=${BB3_SANDBOX_SIF:-$IMAGES/bixbench3-sandbox_1.0.0.sif}
+test -f "$SANDBOX_SIF" || { echo "sandbox SIF not found: $SANDBOX_SIF"; exit 2; }
+cp "$SANDBOX_SIF" "$JOB/bixbench3-sandbox_1.0.0.sif"
+cp "$IMAGES/bixbench3-network-gateway_1.0.0.sif" "$JOB/"
+printf '{"sandbox_sif": "%s", "sha256": "%s", "task_env": "%s"}\n' "$SANDBOX_SIF" \
+  "$(sha256sum "$SANDBOX_SIF" | cut -d' ' -f1)" \
+  "$(apptainer inspect --labels "$SANDBOX_SIF" 2>/dev/null | sed -n 's/.*bixbench3.task_env: *//p' | head -1)" > "$JOB/sandbox_image.json"
+echo "[sherlock] sandbox image: $(cat "$JOB/sandbox_image.json")"
 cp "$BB3/jail/bb3jail" "$JOB/jaildir/bb3jail"
 
 # --- run root, laid out like /var/lib/bixbench3 on the VM
@@ -217,7 +226,7 @@ DEST=$SCRATCH/bixbench3/runs/$RUN_ID
 keep_copy() {  # keep_copy [quick]: quick = local copy only (must fit in Slurm's 30 s KillWait)
   mkdir -p "$DEST/sherlock"
   rsync -a --exclude workspace "$RUN_ROOT/" "$DEST/"
-  cp -a "$JOB/gateway.log" "$JOB/collector.log" "$JOB/hostexec.log" "$JOB/sandbox.json" "$JOB/supervisor.py" "$DEST/sherlock/" 2>/dev/null
+  cp -a "$JOB/gateway.log" "$JOB/collector.log" "$JOB/hostexec.log" "$JOB/sandbox.json" "$JOB/supervisor.py" "$JOB/sandbox_image.json" "$DEST/sherlock/" 2>/dev/null
   cp -a "$JOB/jaillog" "$JOB/squidlog" "$JOB/bixdash" "$DEST/sherlock/" 2>/dev/null
   cp -a "$XDG_DATA_HOME/inspect_ai/samplebuffer" "$DEST/sherlock/" 2>/dev/null
   echo "[sherlock] results kept in $DEST"
