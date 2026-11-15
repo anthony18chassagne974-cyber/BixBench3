@@ -102,6 +102,7 @@ class RuntimeSettings:
     run_description: str = ""
     run_condition: str = "baseline"
     tracking_grade_every: int = 0
+    boot_disk_type: str = "pd-balanced"
     boot_disk_gb: int = RUN_BOOT_DISK_GB
     runtime_image_name: str = RUNTIME_IMAGE_NAME
     runtime_image_family: str = RUNTIME_IMAGE_FAMILY

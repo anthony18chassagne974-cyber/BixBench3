@@ -1,0 +1,11 @@
+{
+  "machine_type": "n2-custom-6-32768",
+  "boot_disk_gb": 200,
+  "boot_disk_type": "pd-standard",
+  "model": "openai/gpt-5.4-mini",
+  "effort": "max",
+  "runtime_image": "bixbench3-runtime-v1-0-0-r7-task11-no10x",
+  "no10x_runtime": true,
+  "track_live": true,
+  "tracking_grade_every": 0
+}

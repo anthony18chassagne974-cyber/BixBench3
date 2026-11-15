@@ -1,5 +1,7 @@
 # BixBench3 — experiments and adapted runner
 
+Shared team setup: **[6 vCPU + live dashboard](TEAM_SETUP.md)**.
+
 Run records: [iterations](iterations/). Adapted task 11 setup: [ADAPTED_RUNNER.md](ADAPTED_RUNNER.md).
 
 The upstream baseline is commit `d0e0bbb41222335b1b8878f533a58466a3a782dc`, included in this branch history.

@@ -175,6 +175,7 @@ class RunPlan:
     inspect_argv: Argv
     machine_type: str
     boot_disk_gb: int
+    boot_disk_type: str
 
     def public_summary(self) -> dict[str, Any]:
         return {
@@ -201,6 +202,7 @@ class RunPlan:
             "loader_vm": self.layout.loader_vm_name,
             "machine_type": self.machine_type,
             "boot_disk_gb": self.boot_disk_gb,
+            "boot_disk_type": self.boot_disk_type,
             "results_uri": self.results_uri,
             "retention": "full_bundle" if self.results_uri else "scores_only",
             "process_judge": process_judge_config(),
@@ -293,6 +295,7 @@ class GCPRunner:
             inspect_argv=inspect_argv,
             machine_type=self.settings.machine_type,
             boot_disk_gb=self.settings.boot_disk_gb,
+            boot_disk_type=self.settings.boot_disk_type,
         )
         validate_plan(plan)
         return plan
@@ -331,6 +334,10 @@ class GCPRunner:
                 task,
                 Path(temporary) / "dataset",
             )
+            if not self.settings.include_10x:
+                runtime = parse_json_object(staged_case.dataset_path.read_text(), "staged case")
+                if runtime.get("licensed_runtime_tools"):
+                    raise ValueError("selected task requires licensed runtime tools; use the full runtime")
             return self._run_staged_task(
                 task=task,
                 model=model,
@@ -1158,6 +1165,7 @@ class GCPRunner:
                 "zone": self.settings.zone,
                 "machine_type": self.settings.machine_type,
                 "boot_disk_gb": self.settings.boot_disk_gb,
+                "boot_disk_type": self.settings.boot_disk_type,
                 "data_disk": plan.layout.data_disk_name,
                 "data_disk_mode": "read-only",
                 "vm_name": plan.layout.vm_name,
@@ -1210,7 +1218,7 @@ def build_run_commands(
         zone,
         f"--machine-type={settings.machine_type}",
         f"--boot-disk-size={settings.boot_disk_gb}GB",
-        "--boot-disk-type=pd-balanced",
+        f"--boot-disk-type={settings.boot_disk_type}",
         (
             "--source-machine-image="
             f"projects/{project}/global/machineImages/{settings.runtime_image_name}"
@@ -1542,7 +1550,7 @@ def build_runtime_plan(
             zone,
             f"--machine-type={settings.machine_type}",
             f"--boot-disk-size={settings.boot_disk_gb}GB",
-            "--boot-disk-type=pd-balanced",
+            f"--boot-disk-type={settings.boot_disk_type}",
             "--image-family=ubuntu-2404-lts-amd64",
             "--image-project=ubuntu-os-cloud",
             "--no-service-account",

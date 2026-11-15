@@ -118,7 +118,7 @@ def make_handler(source: Source, token: str | None):
                 return self._send(401, b"Unauthorized: open /?token=...", "text/plain")
             extra = {}
             if token and query.get("token"):
-                extra["Set-Cookie"] = f"bixdash={token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=604800"
+                extra["Set-Cookie"] = f"bixdash={token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=604800" + ("; Secure" if os.environ.get("K_SERVICE") else "")
             parts = [p for p in url.path.split("/") if p]
             try:
                 if not parts:
@@ -137,10 +137,12 @@ def make_handler(source: Source, token: str | None):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--source", required=True)
-    ap.add_argument("--host", default="127.0.0.1")
-    ap.add_argument("--port", type=int, default=8050)
+    ap.add_argument("--host", default="0.0.0.0" if os.environ.get("K_SERVICE") else "127.0.0.1")
+    ap.add_argument("--port", type=int, default=int(os.environ.get("PORT", "8050")))
     args = ap.parse_args()
     token = os.environ.get("BIXDASH_TOKEN") or None
+    if os.environ.get("K_SERVICE") and not token:
+        raise RuntimeError("BIXDASH_TOKEN is required on Cloud Run")
     server = ThreadingHTTPServer((args.host, args.port), make_handler(Source(args.source), token))
     print(f"bixdash on http://{args.host}:{args.port}  (source={args.source}, token={'on' if token else 'off'})")
     server.serve_forever()

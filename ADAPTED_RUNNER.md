@@ -52,3 +52,10 @@ with a private `--results-bucket`. George's bixdash collector is installed on th
 VM before the analyst starts; no runtime image rebuild is needed. Default cadence
 is five minutes, with partial grading disabled (`--tracking-grade-every 0`). See
 [the bixdash integration guide](tools/bixdash/README.md#integrated-runner-launch).
+
+## Team profile (new experiments)
+
+See [TEAM_SETUP.md](TEAM_SETUP.md) and `configs/team-6vcpu.json` for the shared
+6-vCPU / 32-GB launcher and Cloud Run dashboard. Historical task 11 baseline
+commands above describe the original 8-vCPU run. New disk-type/image overrides
+are explicit; scientific harness/prompt defaults are unchanged.

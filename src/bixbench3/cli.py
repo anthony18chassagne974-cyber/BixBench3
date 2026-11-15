@@ -33,6 +33,7 @@ def build_parser() -> argparse.ArgumentParser:
     setup.add_argument("--project", required=True, help="GCP project ID")
     setup.add_argument("--machine-type", default=RUN_MACHINE_TYPE, help="GCP builder VM type")
     setup.add_argument("--boot-disk-gb", type=int, default=500, help="builder boot disk size in GB")
+    setup.add_argument("--boot-disk-type", choices=["pd-balanced", "pd-standard", "pd-ssd"], default="pd-balanced")
     setup.add_argument("--task11-runtime", action="store_true", help="build the task-11-only runtime without unused licensed 10x tools")
     setup.add_argument(
         "--cellranger-tarball",
@@ -67,6 +68,9 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--project", required=True, help="GCP project ID")
     run.add_argument("--machine-type", default=RUN_MACHINE_TYPE, help="GCP analyst VM type")
     run.add_argument("--boot-disk-gb", type=int, default=500, help="analyst boot disk size in GB")
+    run.add_argument("--boot-disk-type", choices=["pd-balanced", "pd-standard", "pd-ssd"], default="pd-balanced")
+    run.add_argument("--runtime-image", help="existing compatible machine image in the selected project")
+    run.add_argument("--no10x-runtime", action="store_true", help="runtime without licensed 10x tools; rejected for tasks requiring them")
     run.add_argument("--cost-limit", type=float, help="Inspect analyst cost limit in USD (excludes judges and cloud infrastructure)")
     run.add_argument("--track-live", action="store_true", help="install George's bixdash collector on the run VM")
     run.add_argument("--run-description", default="", help="one-line experiment description for live tracking")
@@ -135,7 +139,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 
 
 def _setup_runtime(arguments: argparse.Namespace) -> int:
-    runner = _runner(arguments.project, machine_type=arguments.machine_type, task11_runtime=arguments.task11_runtime, boot_disk_gb=arguments.boot_disk_gb)
+    runner = _runner(arguments.project, machine_type=arguments.machine_type, task11_runtime=arguments.task11_runtime, boot_disk_gb=arguments.boot_disk_gb, boot_disk_type=arguments.boot_disk_type)
     result = runner.setup_runtime(
         cellranger_tarball=arguments.cellranger_tarball,
         cellranger_arc_tarball=arguments.cellranger_arc_tarball,
@@ -155,7 +159,7 @@ def _run(arguments: argparse.Namespace) -> int:
         arguments.effort,
         user_model_args=model_args,
     )
-    runner = _runner(arguments.project, machine_type=arguments.machine_type, task11_runtime=arguments.task11_runtime, boot_disk_gb=arguments.boot_disk_gb, cost_limit=arguments.cost_limit, track_live=arguments.track_live, run_description=arguments.run_description, run_condition=arguments.condition, tracking_grade_every=arguments.tracking_grade_every)
+    runner = _runner(arguments.project, machine_type=arguments.machine_type, task11_runtime=arguments.task11_runtime, boot_disk_gb=arguments.boot_disk_gb, cost_limit=arguments.cost_limit, track_live=arguments.track_live, run_description=arguments.run_description, run_condition=arguments.condition, tracking_grade_every=arguments.tracking_grade_every, boot_disk_type=arguments.boot_disk_type, runtime_image=arguments.runtime_image, no10x_runtime=arguments.no10x_runtime)
     if arguments.track_live and not arguments.results_bucket:
         raise ValueError("--track-live requires --results-bucket")
     result = runner.run_task(
@@ -273,7 +277,11 @@ def _print_judge_summary(result: dict[str, Any], output_root: Path) -> None:
     print(f"Process judge file: {output_root / 'judge.json'}")
 
 
-def _runner(project: str, *, machine_type: str = RUN_MACHINE_TYPE, task11_runtime: bool = False, boot_disk_gb: int = 500, cost_limit: float | None = None, track_live: bool = False, run_description: str = "", run_condition: str = "baseline", tracking_grade_every: int = 0) -> GCPRunner:
+def _runner(project: str, *, machine_type: str = RUN_MACHINE_TYPE, task11_runtime: bool = False, boot_disk_gb: int = 500, cost_limit: float | None = None, track_live: bool = False, run_description: str = "", run_condition: str = "baseline", tracking_grade_every: int = 0, boot_disk_type: str = "pd-balanced", runtime_image: str | None = None, no10x_runtime: bool = False) -> GCPRunner:
+    if boot_disk_type not in {"pd-balanced", "pd-standard", "pd-ssd"}:
+        raise ValueError("unsupported boot disk type")
+    if no10x_runtime and not runtime_image:
+        raise ValueError("--no10x-runtime requires --runtime-image")
     if boot_disk_gb < 20:
         raise ValueError("boot disk must be at least 20 GB")
     if cost_limit is not None and cost_limit <= 0:
@@ -286,13 +294,16 @@ def _runner(project: str, *, machine_type: str = RUN_MACHINE_TYPE, task11_runtim
         raise ValueError("tracking grading interval must be nonnegative")
     repo_root = Path(__file__).resolve().parents[2]
     settings = RuntimeSettings(
-        machine_type=machine_type, include_10x=not task11_runtime, boot_disk_gb=boot_disk_gb,
+        machine_type=machine_type, include_10x=not (task11_runtime or no10x_runtime), boot_disk_gb=boot_disk_gb,
+        boot_disk_type=boot_disk_type,
         analyst_cost_limit=cost_limit, track_live=track_live,
         run_description=run_description, run_condition=run_condition,
         tracking_grade_every=tracking_grade_every,
     )
     if task11_runtime:
         settings = replace(settings, runtime_image_name="bixbench3-runtime-v1-0-0-r7-task11-no10x")
+    if runtime_image:
+        settings = replace(settings, runtime_image_name=runtime_image)
     return GCPRunner(
         project=project,
         executor=SubprocessExecutor(),

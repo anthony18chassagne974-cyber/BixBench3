@@ -716,3 +716,35 @@ def test_tracking_requires_description_and_nonnegative_interval() -> None:
         _runner("project", tracking_grade_every=-1)
     with pytest.raises(ValueError, match="single-line"):
         _runner("project", run_description="first\nsecond")
+
+
+def test_shared_six_cpu_profile_and_disk_override(task: TaskSpec, tmp_path: Path) -> None:
+    from bixbench3.cli import _runner
+
+    runner = _runner('example-project', machine_type='n2-custom-6-32768', boot_disk_gb=200,
+                     boot_disk_type='pd-standard', runtime_image='shared-no10x', no10x_runtime=True)
+    plan = runner.build_run_plan(task=task, model=resolve_model('openai/gpt-5.4-mini', 'max'),
+                                 results_bucket='gs://example-results')
+    assert '--machine-type=n2-custom-6-32768' in plan.commands['create_run_vm']
+    assert '--boot-disk-type=pd-standard' in plan.commands['create_run_vm']
+    assert plan.public_summary()['boot_disk_type'] == 'pd-standard'
+    assert runner.settings.include_10x is False
+    assert runner.settings.runtime_image_name == 'shared-no10x'
+    with pytest.raises(ValueError, match='requires --runtime-image'):
+        _runner('example-project', no10x_runtime=True)
+
+
+def test_no10x_runtime_rejects_licensed_task_before_cloud(tmp_path: Path, task: TaskSpec, monkeypatch: pytest.MonkeyPatch) -> None:
+    import bixbench3.gcp_runner as module
+
+    path = tmp_path / 'case.json'
+    path.write_text(json.dumps({'licensed_runtime_tools': ['cellranger']}))
+    staged = module.StagedCase(tmp_path, path, {})
+    monkeypatch.setattr(module, 'stage_hf_case', lambda *args: staged)
+    monkeypatch.setattr(module, 'selected_environment', lambda *args: {})
+    executor = RecordingExecutor()
+    runner = GCPRunner(project='example-project', executor=executor,
+                       settings=RuntimeSettings(include_10x=False))
+    with pytest.raises(ValueError, match='requires licensed'):
+        runner.run_task(task=task, model=resolve_model('openai/gpt-5.4-mini', 'max'))
+    assert executor.calls == []
