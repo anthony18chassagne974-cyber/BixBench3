@@ -302,7 +302,10 @@ def agents_summary(calls: list[tuple], t0: float | None, now: float, step: int =
         row["cost_usd"] = round(row["cost_usd"], 4)
         row["first_ts"] = datetime.fromtimestamp(row["first_ts"], UTC).isoformat(timespec="seconds")
         row["last_ts"] = datetime.fromtimestamp(row["last_ts"], UTC).isoformat(timespec="seconds")
-    return {"agents": sorted(table.values(), key=lambda r: -r["calls"]), "agent_timeline": timeline}
+    # sub-agents started with the run_subagent tool run in spans named "subagent-<n>-<role>"
+    n_sub = sum(1 for name in table if str(name).startswith("subagent-"))
+    return {"agents": sorted(table.values(), key=lambda r: -r["calls"]), "agent_timeline": timeline,
+            "n_subagents": n_sub}
 
 
 def clean_details(details: dict | None) -> dict:
@@ -642,6 +645,7 @@ def main() -> int:
         "progress": progress,
         "agents": buf.get("agents"),
         "agent_timeline": buf.get("agent_timeline"),
+        "n_subagents": buf.get("n_subagents"),  # sub-agents that made at least one model call
         "eta": eta,
         "resources": resources(),
         "artifacts": arts,
@@ -651,6 +655,7 @@ def main() -> int:
     compact["progress_done"] = progress.get("done")
     tl = buf.get("agent_timeline") or []
     compact["n_agents"] = tl[-1]["n_agents"] if tl else None
+    compact["n_subagents"] = buf.get("n_subagents")
     with hist_path.open("a") as f:
         f.write(json.dumps(compact) + "\n")
     snap["grade"] = grade
@@ -664,7 +669,7 @@ def main() -> int:
         upload = gs_put_many([STATE / n for n in ("meta.json", "latest.json", "history.jsonl")],
                              f"{target}/{meta['run_id']}/")
         (STATE / "upload_status.json").write_text(json.dumps(upload, indent=2))
-    summary = {k: snap[k] for k in ("ts", "elapsed_s", "phase", "artifacts_present", "partial_score", "cost_usd", "idle_s")}
+    summary = {k: snap[k] for k in ("ts", "elapsed_s", "phase", "artifacts_present", "partial_score", "cost_usd", "idle_s", "n_subagents")}
     if upload:
         summary["upload"] = "ok" if upload["ok"] else f"FAILED: {upload['error']}"
         summary["dashboard"] = upload["dest"]
