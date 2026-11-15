@@ -35,11 +35,16 @@
     $(id).innerHTML = `<option value="all">${allLabel}</option>` + values.map(v => `<option value="${esc(v)}">${esc(v)}</option>`).join('');
     $(id).value = values.includes(old) ? old : 'all';
   }
+  const tooltip = $('point-tooltip');
+  const hideTooltip = () => { tooltip.hidden = true; };
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') hideTooltip(); });
+  window.addEventListener('scroll', hideTooltip, true);
+  window.addEventListener('resize', hideTooltip);
   function render() {
+    hideTooltip();
     const selected = rows.filter(r => ($('task').value === 'all' || r.task === $('task').value) && ($('owner').value === 'all' || r.owner === $('owner').value));
     const partial = $('partial').checked, metric = $('budget').value;
     $('budget-heading').textContent = metric === 'tokens' ? 'Score vs total tokens' : 'Score vs model calls';
-    $('legend').innerHTML = selected.map(r => `<span><i class="dot" style="background:${colors[r.id]}"></i>${esc(r.name)}</span>`).join('');
     chart('cost-chart', plottable(selected, 'cost', partial), 'cost', 'Estimated analyst API cost (USD)');
     chart('time-chart', plottable(selected, 'time', partial), 'time', 'Elapsed time (minutes)');
     chart('budget-chart', plottable(selected, metric, partial), metric, metric === 'tokens' ? 'Total tokens (millions)' : 'Model calls');
@@ -65,12 +70,37 @@
     svg += `<text x="${(P.l+W-P.r)/2}" y="${H-7}" text-anchor="middle" fill="var(--muted)" font-size="12">${label}</text><text transform="translate(15 ${H/2}) rotate(-90)" text-anchor="middle" fill="var(--muted)" font-size="12">Scientific score</text>`;
     points.forEach((r,i) => {
       const title = `${r.name} | ${r.final ? 'Final' : 'Intermediate'} score: ${score(r.score)} | ${label}: ${metric === 'tokens' ? fmt(r.tokens) : fmt(r[metric])}`;
-      svg += `<circle class="point" data-point="${i}" tabindex="0" role="img" aria-label="${esc(title)}" cx="${X(r[metric])}" cy="${Y(r.score)}" r="7" fill="${r.final ? colors[r.id] : 'var(--surface)'}" stroke="${colors[r.id]}" stroke-width="2.5" ${r.final ? '' : 'stroke-dasharray="3 2"'}><title>${esc(title)}</title></circle>`;
+      svg += `<circle class="point" data-point="${i}" tabindex="0" role="img" aria-label="${esc(title)}" cx="${X(r[metric])}" cy="${Y(r.score)}" r="3.5" fill="${r.final ? colors[r.id] : 'var(--surface)'}" stroke="${colors[r.id]}" stroke-width="1.5" ${r.final ? '' : 'stroke-dasharray="3 2"'}></circle>`;
     });
-    el.innerHTML = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Scientific score versus ${esc(label)}">${svg}</svg><div class="detail" aria-live="polite">Hover or focus a point to inspect it.</div>`;
+    el.innerHTML = `<p class="note">${points.length} scored run${points.length === 1 ? "" : "s"} plotted</p><svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Scientific score versus ${esc(label)}">${svg}</svg>`;
     el.querySelectorAll('.point').forEach(point => {
-      const show = () => { const r = points[Number(point.dataset.point)]; el.querySelector('.detail').textContent = `${r.name} · ${r.final ? 'Final' : 'Intermediate'} score ${score(r.score)} · $${fmt(r.cost)} API · ${fmt(r.time)} min · ${fmt(r.calls)} model calls · ${fmt(r.tokens)} tokens`; };
-      point.addEventListener('mouseenter', show); point.addEventListener('focus', show); point.addEventListener('click', show);
+      const r = points[Number(point.dataset.point)];
+      const position = event => {
+        const bounds = point.getBoundingClientRect();
+        const x = event && Number.isFinite(event.clientX) ? event.clientX : bounds.right;
+        const y = event && Number.isFinite(event.clientY) ? event.clientY : bounds.top;
+        const box = tooltip.getBoundingClientRect();
+        const left = x + 14 + box.width > innerWidth - 8 ? x - box.width - 14 : x + 14;
+        const top = y + 14 + box.height > innerHeight - 8 ? y - box.height - 14 : y + 14;
+        tooltip.style.left = Math.max(8, Math.min(left, innerWidth - box.width - 8)) + 'px';
+        tooltip.style.top = Math.max(8, Math.min(top, innerHeight - box.height - 8)) + 'px';
+      };
+      const show = event => {
+        const value = metric === 'cost' ? '$' + r.cost.toFixed(2) + ' API cost'
+          : metric === 'time' ? fmt(r.time) + ' min elapsed'
+          : metric === 'tokens' ? fmt(r.tokens) + ' total tokens' : fmt(r.calls) + ' model calls';
+        tooltip.innerHTML = `<strong>${esc(r.name)}</strong><div>${r.final ? 'Final' : 'Intermediate'} score: ${score(r.score)}</div><div>${esc(value)}</div>`;
+        tooltip.hidden = false;
+        point.setAttribute('aria-describedby', 'point-tooltip');
+        position(event);
+      };
+      const hide = () => { hideTooltip(); point.removeAttribute('aria-describedby'); };
+      point.addEventListener('pointerenter', show);
+      point.addEventListener('pointermove', position);
+      point.addEventListener('pointerleave', hide);
+      point.addEventListener('focus', () => show());
+      point.addEventListener('blur', hide);
+      point.addEventListener('click', show);
     });
   }
   async function load() {
