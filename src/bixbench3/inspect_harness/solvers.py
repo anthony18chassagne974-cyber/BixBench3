@@ -1,11 +1,12 @@
 from __future__ import annotations
 
-from inspect_ai.agent import Agent, react
+from inspect_ai.agent import Agent, AgentSubmit, react
 from inspect_ai.model import CompactionAuto
 from inspect_ai.solver import Generate, Solver, TaskState, solver
 from inspect_ai.tool import bash_session, python, text_editor
 from inspect_ai.util import sandbox
 
+from .artifact_review import review_submit, submit_artifact
 from .model_info import register_model_info
 from .tools import request_web_access
 
@@ -20,7 +21,9 @@ def bixbench3_agent() -> Agent:
             python(timeout=600),
             text_editor(timeout=120),
             request_web_access(),
+            submit_artifact(),
         ],
+        submit=AgentSubmit(tool=review_submit()),
         compaction=CompactionAuto(),
     )
 
