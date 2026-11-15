@@ -814,3 +814,106 @@ def test_team_launcher_forwards_owner_and_central_dashboard(tmp_path: Path) -> N
     args.owner, args.dashboard_uri = None, None
     assert "--owner" not in module.build_command(args)
 
+
+
+def _harness_git_repo(root: Path) -> Path:
+    harness = root / "src" / "bixbench3" / "inspect_harness"
+    harness.mkdir(parents=True)
+    (harness / "solvers.py").write_text("VALUE = 1\n", newline="\n")
+    (root / "src" / "bixbench3" / "gcp_runner.py").write_text("# launcher, never overlaid\n", newline="\n")
+    for argv in (
+        ("init", "-q"), ("config", "user.email", "test@example.invalid"), ("config", "user.name", "test"),
+        ("config", "core.autocrlf", "false"), ("add", "-A"), ("commit", "-q", "-m", "fixture"),
+    ):
+        subprocess.run(("git", "-C", str(root), *argv), check=True, capture_output=True)
+    return harness
+
+
+def test_harness_overlay_archives_only_committed_inspect_harness(tmp_path: Path) -> None:
+    import tarfile as _tarfile
+
+    from bixbench3.gcp_runner import create_harness_overlay
+
+    repo = tmp_path / "repo"
+    harness = _harness_git_repo(repo)
+    first = create_harness_overlay(repo, tmp_path / "run-a")
+    second = create_harness_overlay(repo, tmp_path / "run-b")
+    assert first["enabled"] is True
+    assert first["archive_sha256"] == second["archive_sha256"]
+    assert first["paths"] == ["src/bixbench3/inspect_harness"]
+    assert list(first["git_blobs"]) == ["src/bixbench3/inspect_harness/solvers.py"]
+    assert len(first["git_commit"]) == 40
+    with _tarfile.open(tmp_path / "run-a" / "bixbench3-harness-overlay.tar.gz") as archive:
+        files = [member.name for member in archive.getmembers() if member.isfile()]
+        content = archive.extractfile("src/bixbench3/inspect_harness/solvers.py").read()
+    assert files == ["src/bixbench3/inspect_harness/solvers.py"]
+    assert content == b"VALUE = 1\n"
+    subprocess.run(("git", "-C", str(repo), "config", "core.autocrlf", "true"), check=True)
+    crlf_host = create_harness_overlay(repo, tmp_path / "run-crlf")
+    assert crlf_host["archive_sha256"] == first["archive_sha256"]
+
+    (harness / "solvers.py").write_text("VALUE = 2\n", newline="\n")
+    with pytest.raises(RuntimeError, match="committed harness changes"):
+        create_harness_overlay(repo, tmp_path / "run-c")
+    (harness / "untracked.py").write_text("x = 1\n", newline="\n")
+    subprocess.run(("git", "-C", str(repo), "checkout", "-q", "--", "."), check=True)
+    with pytest.raises(RuntimeError, match="committed harness changes"):
+        create_harness_overlay(repo, tmp_path / "run-d")
+
+
+def test_harness_overlay_is_opt_in_and_installed_before_the_analyst(task: TaskSpec, tmp_path: Path) -> None:
+    from bixbench3.gcp_runner import create_harness_overlay, remote_harness_overlay_script
+
+    repo = tmp_path / "repo"
+    _harness_git_repo(repo)
+    model = resolve_model("openai/gpt-5.4-mini", "max")
+    default_plan = GCPRunner(
+        project="example-project", executor=RecordingExecutor(), runs_root=tmp_path / "runs", repo_root=repo,
+    ).build_run_plan(task=task, model=model, results_bucket=None)
+    assert default_plan.public_summary()["harness_overlay"] is False
+
+    executor = RecordingExecutor()
+    runner = GCPRunner(
+        project="example-project", executor=executor, runs_root=tmp_path / "runs", repo_root=repo,
+        settings=RuntimeSettings(harness_overlay=True),
+    )
+    plan = runner.build_run_plan(task=task, model=model, results_bucket=None)
+    assert plan.public_summary()["harness_overlay"] is True
+    overlay = create_harness_overlay(repo, plan.layout.manifest_path.parent)
+    runner._install_harness_overlay(plan, overlay)
+    assert len(executor.calls) == 2
+    assert "scp" in executor.calls[0]
+    assert executor.calls[0][-2].endswith(":~/bixbench3-harness-overlay.tar.gz")
+    assert executor.calls[1][-1] == "sudo bash -s"
+
+    script = remote_harness_overlay_script(archive_sha256=overlay["archive_sha256"], remote_root="/var/lib/bixbench3")
+    assert subprocess.run(("bash", "-n"), input=script, text=True, capture_output=True, check=False).returncode == 0
+    assert overlay["archive_sha256"] in script
+    assert "/opt/bixbench3/.harness-baseline" in script
+    assert "src/bixbench3/inspect_harness" in script
+    assert "grading" not in script and "network_gateway" not in script
+    with pytest.raises(ValueError, match="checksum"):
+        remote_harness_overlay_script(archive_sha256="not-a-hash", remote_root="/var/lib/bixbench3")
+
+
+def test_team_launcher_forwards_harness_overlay(tmp_path: Path) -> None:
+    import importlib.util
+    import json as _json
+    from types import SimpleNamespace
+
+    spec = importlib.util.spec_from_file_location(
+        "run_team_overlay", Path(__file__).resolve().parents[2] / "scripts" / "run_team.py")
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    spec.loader.exec_module(module)
+    config = tmp_path / "team.json"
+    config.write_text(_json.dumps({
+        "machine_type": "n2-custom-6-32768", "boot_disk_gb": 200, "boot_disk_type": "pd-standard",
+        "model": "openai/gpt-5.4-mini", "effort": "max", "runtime_image": "img",
+        "no10x_runtime": True, "track_live": True, "tracking_grade_every": 0,
+    }))
+    base = dict(config=config, task="11", project="member", results_bucket="gs://member-results",
+                condition="v2c", description="v2c test", boot_disk_type=None, boot_disk_source=None,
+                dry_run=True, owner="", dashboard_uri="")
+    assert "--harness-overlay" in module.build_command(SimpleNamespace(**base, harness_overlay=True))
+    assert "--harness-overlay" not in module.build_command(SimpleNamespace(**base, harness_overlay=False))

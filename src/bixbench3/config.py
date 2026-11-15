@@ -104,6 +104,7 @@ class RuntimeSettings:
     tracking_grade_every: int = 0
     dashboard_uri: str = ""
     run_owner: str = ""
+    harness_overlay: bool = False
     boot_disk_type: str = "pd-balanced"
     boot_disk_gb: int = RUN_BOOT_DISK_GB
     boot_disk_source: str | None = None
