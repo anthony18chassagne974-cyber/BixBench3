@@ -1,0 +1,383 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="data:,">
+<title>bixdash · runs BixBench3</title>
+<style>
+:root {
+  color-scheme: light;
+  --bg: #f6f6f4; --surface-1: #fcfcfb; --surface-2: #f0efec; --border: #e2e1dc;
+  --text-primary: #0b0b0b; --text-secondary: #52514e; --text-muted: #7a7974;
+  --series-1: #2a78d6; --series-2: #eb6834; --series-3: #1baf7a; --grid: #e7e6e1;
+  --good: #1a7f37; --warn: #9a6700; --bad: #c62828; --idle: #7a7974;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    color-scheme: dark;
+    --bg: #121211; --surface-1: #1a1a19; --surface-2: #232321; --border: #33332f;
+    --text-primary: #f0efec; --text-secondary: #c3c2b7; --text-muted: #8f8e86;
+    --series-1: #3987e5; --series-2: #d95926; --series-3: #199e70; --grid: #2c2c29;
+    --good: #0ca30c; --warn: #c98500; --bad: #e66767; --idle: #8f8e86;
+  }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--text-primary);
+  font: 14px/1.45 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; }
+header { display: flex; align-items: baseline; gap: 16px; flex-wrap: wrap;
+  padding: 18px 24px 8px; }
+h1 { font-size: 18px; margin: 0; font-weight: 650; }
+.sub { color: var(--text-secondary); font-size: 13px; }
+.deadline { margin-left: auto; font-variant-numeric: tabular-nums; }
+main { padding: 8px 24px 40px; max-width: 1180px; }
+.filters { display: flex; gap: 8px; margin: 6px 0 12px; flex-wrap: wrap; }
+.filters button { border: 1px solid var(--border); background: var(--surface-1); color: var(--text-secondary);
+  border-radius: 999px; padding: 4px 12px; font: inherit; font-size: 13px; cursor: pointer; }
+.filters button[aria-pressed="true"] { color: var(--text-primary); border-color: var(--text-secondary); }
+.run { background: var(--surface-1); border: 1px solid var(--border); border-radius: 10px; margin-bottom: 10px; }
+.run > summary { list-style: none; cursor: pointer; padding: 12px 16px;
+  display: grid; grid-template-columns: 110px 1fr repeat(4, 104px) 18px; gap: 12px; align-items: center; }
+.run > summary::-webkit-details-marker { display: none; }
+.run[open] > summary { border-bottom: 1px solid var(--border); }
+.chev { color: var(--text-muted); transition: transform .15s; }
+.run[open] .chev { transform: rotate(90deg); }
+.title { min-width: 0; }
+.title .desc { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.title .ids { color: var(--text-muted); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.kpi { text-align: right; font-variant-numeric: tabular-nums; }
+.kpi .v { font-weight: 600; }
+.kpi .l { color: var(--text-muted); font-size: 11px; text-transform: uppercase; letter-spacing: .03em; }
+.status { display: inline-flex; gap: 6px; align-items: center; font-size: 12px; font-weight: 600; }
+.status svg { flex: none; }
+.chip { display: inline-block; font-size: 11px; padding: 1px 7px; border-radius: 999px;
+  background: var(--surface-2); color: var(--text-secondary); margin-right: 4px; }
+.body { padding: 14px 16px 18px; }
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 10px 18px; margin-bottom: 16px; }
+.cell .l { color: var(--text-muted); font-size: 12px; }
+.cell .v { font-variant-numeric: tabular-nums; font-weight: 600; }
+.cell .n { color: var(--text-secondary); font-size: 12px; }
+h3 { font-size: 13px; margin: 18px 0 8px; color: var(--text-secondary); font-weight: 600; text-transform: uppercase; letter-spacing: .03em; }
+.charts { display: grid; grid-template-columns: 1fr 1fr; gap: 16px 24px; }
+.chart { position: relative; background: var(--surface-1); }
+.chart .ct { font-weight: 600; font-size: 13px; margin-bottom: 4px; }
+.legend { display: flex; gap: 14px; font-size: 12px; color: var(--text-secondary); margin-bottom: 4px; }
+.legend i { display: inline-block; width: 14px; height: 2px; vertical-align: middle; margin-right: 5px; border-radius: 2px; }
+.tip { position: absolute; pointer-events: none; background: var(--surface-1); border: 1px solid var(--border);
+  border-radius: 6px; padding: 6px 8px; font-size: 12px; box-shadow: 0 2px 8px rgba(0,0,0,.12); display: none;
+  font-variant-numeric: tabular-nums; white-space: nowrap; }
+table { border-collapse: collapse; width: 100%; font-size: 13px; }
+th, td { text-align: left; padding: 5px 8px; border-bottom: 1px solid var(--border); font-variant-numeric: tabular-nums; }
+th { color: var(--text-muted); font-weight: 600; font-size: 12px; }
+td.num, th.num { text-align: right; }
+.bar { height: 6px; background: var(--surface-2); border-radius: 3px; overflow: hidden; margin-top: 4px; }
+.bar > span { display: block; height: 100%; background: var(--series-1); border-radius: 3px; }
+pre { background: var(--surface-2); padding: 8px 10px; border-radius: 6px; white-space: pre-wrap; word-break: break-word;
+  font-size: 12px; max-height: 180px; overflow: auto; margin: 0; }
+.diffbar { display: flex; height: 10px; border-radius: 3px; overflow: hidden; gap: 2px; background: transparent; min-width: 160px; }
+.diffbar span { display: block; height: 100%; }
+.diffbar span:first-child { border-radius: 3px 0 0 3px; } .diffbar span:last-child { border-radius: 0 3px 3px 0; }
+.dlegend { display: flex; gap: 14px; font-size: 12px; color: var(--text-secondary); margin: 2px 0 8px; }
+.dlegend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; vertical-align: -1px; margin-right: 5px; }
+.diag { font-size: 12px; color: var(--text-secondary); }
+.delta-pos { color: var(--good); } .delta-neg { color: var(--bad); }
+.compare td:nth-child(2) { color: var(--text-primary); }
+.muted { color: var(--text-muted); }
+.err { color: var(--bad); font-size: 12px; }
+@media (max-width: 860px) {
+  .run > summary { grid-template-columns: 1fr 90px 90px 18px; }
+  .run > summary .hide-sm { display: none; }
+  .charts { grid-template-columns: 1fr; }
+}
+</style>
+</head>
+<body>
+<header>
+  <h1>BixBench3 · runs</h1>
+  <span class="sub" id="refreshed">chargement…</span>
+  <span class="deadline sub" id="deadline"></span>
+</header>
+<main>
+  <div class="filters" id="filters"></div>
+  <div id="runs"></div>
+</main>
+<script>
+const REFRESH_MS = 60_000;
+const DEADLINE = new Date("2026-11-15T22:00:00Z"); // dim. 14:00 PT — rendu hackathon
+let RUNS = [], HIST = {}, FILTER = "all";
+const openIds = new Set();
+
+const fmtDur = s => {
+  if (s == null || isNaN(s)) return "—";
+  s = Math.max(0, Math.round(s)); const h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60);
+  return h ? `${h} h ${String(m).padStart(2, "0")}` : `${m} min`;
+};
+const fmtTime = iso => iso ? new Date(iso).toLocaleString("fr-FR", { weekday: "short", hour: "2-digit", minute: "2-digit" }) : "—";
+const fmtUsd = v => v == null ? "—" : `$${v < 10 ? v.toFixed(2) : v.toFixed(0)}`;
+const fmtScore = v => v == null ? "—" : v.toFixed(3);
+const fmtTok = v => v == null ? "—" : v >= 1e6 ? (v / 1e6).toFixed(1) + " M" : v >= 1e3 ? (v / 1e3).toFixed(0) + " k" : String(v);
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+function statusOf(r) {
+  const l = r.latest || {};
+  if (l.status === "succeeded") return ["Terminé", "good", "check"];
+  if (l.status === "failed") return ["Échec", "bad", "x"];
+  if (l.phase === "grading" || l.phase === "judging" || l.phase === "uploading") return ["Notation", "warn", "dot"];
+  if ((l.idle_s ?? 0) > 1800) return ["Inactif " + fmtDur(l.idle_s), "warn", "pause"];
+  if (l.phase === "agent_running") return ["En cours", "good", "dot"];
+  return [l.phase || "inconnu", "idle", "dot"];
+}
+function statusIcon(kind, color) {
+  const c = `var(--${color})`;
+  if (kind === "check") return `<svg width="12" height="12" viewBox="0 0 12 12"><path d="M2 6.5l2.5 2.5L10 3" fill="none" stroke="${c}" stroke-width="2" stroke-linecap="round"/></svg>`;
+  if (kind === "x") return `<svg width="12" height="12" viewBox="0 0 12 12"><path d="M3 3l6 6M9 3l-6 6" stroke="${c}" stroke-width="2" stroke-linecap="round"/></svg>`;
+  if (kind === "pause") return `<svg width="12" height="12" viewBox="0 0 12 12"><path d="M4 2.5v7M8 2.5v7" stroke="${c}" stroke-width="2" stroke-linecap="round"/></svg>`;
+  return `<svg width="10" height="10" viewBox="0 0 10 10"><circle cx="5" cy="5" r="4" fill="${c}"/></svg>`;
+}
+
+function baselineFor(r) {
+  const m = r.meta || {};
+  if (m.condition === "baseline") return null;
+  if (m.baseline_run_id) return RUNS.find(x => x.run_id === m.baseline_run_id) || null;
+  return RUNS.find(x => x.meta?.condition === "baseline" && x.meta?.task_id === m.task_id && x.run_id !== r.run_id) || null;
+}
+
+// value of a history series at elapsed t (last observation carried forward)
+function valueAt(hist, key, t) {
+  let v = null;
+  for (const h of hist || []) { if (h.elapsed_s > t) break; if (h[key] != null) v = h[key]; }
+  return v;
+}
+
+async function load() {
+  try {
+    const res = await fetch("api/runs", { cache: "no-store" });
+    if (!res.ok) throw new Error(res.status + " " + (await res.text()));
+    RUNS = await res.json();
+    RUNS.sort((a, b) => (b.meta?.started_at || "").localeCompare(a.meta?.started_at || ""));
+    await Promise.all(RUNS.map(async r => {
+      const h = await fetch(`api/run/${encodeURIComponent(r.run_id)}/history`, { cache: "no-store" });
+      HIST[r.run_id] = h.ok ? await h.json() : [];
+    }));
+    document.getElementById("refreshed").textContent =
+      `${RUNS.length} run(s) · actualisé ${new Date().toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })} · auto toutes les 60 s`;
+    render();
+  } catch (e) {
+    document.getElementById("refreshed").innerHTML = `<span class="err">Erreur : ${esc(e.message)}</span>`;
+  }
+}
+
+function renderFilters() {
+  const conds = ["all", ...new Set(RUNS.map(r => r.meta?.condition || "?"))];
+  document.getElementById("filters").innerHTML = conds.map(c =>
+    `<button aria-pressed="${FILTER === c}" data-f="${esc(c)}">${c === "all" ? "Tous" : esc(c)}</button>`).join("");
+  document.querySelectorAll("#filters button").forEach(b => b.onclick = () => { FILTER = b.dataset.f; render(); });
+}
+
+function render() {
+  renderFilters();
+  const box = document.getElementById("runs");
+  const list = RUNS.filter(r => FILTER === "all" || (r.meta?.condition || "?") === FILTER);
+  if (!list.length) { box.innerHTML = `<p class="muted">Aucun run. Le collecteur publie dans <code>_dashboard/&lt;run_id&gt;/</code>.</p>`; return; }
+  box.innerHTML = list.map(runCard).join("");
+  box.querySelectorAll("details.run").forEach(d => {
+    d.addEventListener("toggle", () => {
+      d.open ? openIds.add(d.dataset.id) : openIds.delete(d.dataset.id);
+      if (d.open) drawCharts(d);
+    });
+    if (d.open) drawCharts(d);
+  });
+}
+
+function runCard(r) {
+  const m = r.meta || {}, l = r.latest || {};
+  const [slabel, scolor, sicon] = statusOf(r);
+  const score = l.partial_score;
+  return `<details class="run" data-id="${esc(r.run_id)}" ${openIds.has(r.run_id) ? "open" : ""}>
+  <summary>
+    <span class="status" style="color:var(--${scolor})">${statusIcon(sicon, scolor)}<span style="color:var(--text-primary)">${esc(slabel)}</span></span>
+    <span class="title">
+      <div class="desc">${esc(m.description || "(pas de RUN_DESCRIPTION)")}</div>
+      <div class="ids"><span class="chip">${esc(m.condition || "?")}</span><span class="chip">${esc(m.model || "?")}${m.effort ? " · " + esc(m.effort) : ""}</span>tâche ${esc(m.task_id ?? "?")} · ${esc(r.run_id)}</div>
+    </span>
+    <span class="kpi"><div class="v">${fmtScore(score)}${l.score_is_final ? "" : score != null ? "*" : ""}</div><div class="l">score</div></span>
+    <span class="kpi hide-sm"><div class="v">${l.artifacts_present ?? "—"}/${l.artifacts_total ?? "—"}</div><div class="l">artefacts</div></span>
+    <span class="kpi"><div class="v">${fmtUsd(l.cost_usd)}</div><div class="l">coût</div></span>
+    <span class="kpi hide-sm"><div class="v">${fmtDur(l.elapsed_s)}</div><div class="l">écoulé</div></span>
+    <span class="chev">›</span>
+  </summary>
+  <div class="body">${runBody(r)}</div>
+</details>`;
+}
+
+function runBody(r) {
+  const m = r.meta || {}, l = r.latest || {}, base = baselineFor(r);
+  const startMs = m.started_at ? Date.parse(m.started_at) : null;
+  const limitEnd = startMs ? new Date(startMs + (m.time_limit_s || 86400) * 1000) : null;
+  const tok = l.tokens || {}, res = l.resources || {}, eta = l.eta || {}, prog = l.progress || {};
+  const etaEnd = eta.remaining_s != null ? new Date(Date.now() + eta.remaining_s * 1000) : null;
+  const done = l.status === "succeeded" || l.status === "failed";
+  const afterDeadline = !done && limitEnd && limitEnd > DEADLINE;
+  const cells = [
+    ["Début", fmtTime(m.started_at), m.vm || ""],
+    ["Temps écoulé", fmtDur(l.elapsed_s), `phase : ${l.phase || "—"}`],
+    done ? ["Fin", fmtTime(l.ts), l.status === "succeeded" ? "run terminé" : "run en échec"]
+         : ["Restant estimé", fmtDur(eta.remaining_s), eta.method ? `≈ ${fmtTime(etaEnd?.toISOString())} · ${eta.method}` : "pas encore estimable"],
+    ...(done ? [] : [["Limite 24 h", fmtDur(eta.time_limit_left_s), limitEnd ? `fin max ${fmtTime(limitEnd.toISOString())}${afterDeadline ? " — après la deadline" : ""}` : ""]]),
+    ["Coût (API)", fmtUsd(l.cost_usd), `${l.n_model_calls ?? "—"} appels modèle · ${l.n_tool_calls ?? "—"} outils`],
+    ["Tokens", fmtTok((tok.input || 0) + (tok.cached || 0) + (tok.output || 0)), `in ${fmtTok(tok.input)} · cache ${fmtTok(tok.cached)} · out ${fmtTok(tok.output)} · raisonnement ${fmtTok(tok.reasoning)}`],
+    ["Inactivité", fmtDur(l.idle_s), "depuis le dernier fichier ou événement"],
+    ...(l.judge ? [["Juge de processus", l.judge.score != null ? (l.judge.score * (l.judge.score <= 1 ? 100 : 1)).toFixed(0) + " %" : "—", (l.judge.failure_modes || []).map(f => typeof f === "string" ? f : f.tag).join(", ")]] : []),
+    ["Machine", res.load1 != null ? `charge ${res.load1.toFixed(1)} / ${res.ncpu}` : "—", res.mem_used_gb != null ? `RAM ${res.mem_used_gb}/${res.mem_total_gb} Go · disque ${res.disk_used_gb}/${res.disk_total_gb} Go` : ""],
+  ];
+  let html = `<div class="grid">${cells.map(([a, b, c]) => `<div class="cell"><div class="l">${a}</div><div class="v">${b}</div><div class="n">${esc(c)}</div></div>`).join("")}</div>`;
+
+  if (prog.total) {
+    const pct = Math.min(100, 100 * prog.done / prog.total);
+    html += `<div class="cell" style="max-width:420px"><div class="l">${esc(prog.label)}</div><div class="v">${prog.done} / ${prog.total}</div><div class="bar"><span style="width:${pct}%"></span></div></div>`;
+  }
+
+  // same-moment comparison vs baseline
+  if (base) {
+    const t = l.elapsed_s, bh = HIST[base.run_id];
+    const rows = [
+      ["Score partiel", fmtScore(l.partial_score), fmtScore(valueAt(bh, "partial_score", t))],
+      ["Artefacts produits", l.artifacts_present ?? "—", valueAt(bh, "artifacts_present", t) ?? "—"],
+      ["Coût", fmtUsd(l.cost_usd), fmtUsd(valueAt(bh, "cost_usd", t))],
+      ["Appels modèle", l.n_model_calls ?? "—", valueAt(bh, "n_model_calls", t) ?? "—"],
+    ];
+    html += `<h3>Au même moment (t = ${fmtDur(t)}) — ce run vs baseline</h3>
+    <table class="compare" style="max-width:560px"><thead><tr><th></th><th class="num">Ce run</th><th class="num">Baseline</th></tr></thead>
+    <tbody>${rows.map(([a, b, c]) => `<tr><td>${a}</td><td class="num">${b}</td><td class="num">${c}</td></tr>`).join("")}</tbody></table>
+    <div class="n muted" style="margin-top:4px">Baseline : ${esc(base.meta?.description || base.run_id)}</div>`;
+  }
+
+  html += `<h3>Évolution</h3><div class="charts">
+    <div class="chart" data-key="partial_score" data-title="Score partiel (grader officiel)" data-fmt="score"></div>
+    <div class="chart" data-key="cost_usd" data-title="Coût cumulé (USD)" data-fmt="usd"></div>
+    <div class="chart" data-src="timeline" data-key="n_agents" data-title="Agents actifs (par tranche de 5 min)" data-fmt="int"></div>
+  </div>`;
+  if ((l.agents || []).length) {
+    html += `<h3>Agents</h3><table style="max-width:760px"><thead><tr><th>Agent</th><th class="num">Appels modèle</th><th class="num">Tokens</th><th class="num">Coût</th><th>Dernière activité</th></tr></thead><tbody>${
+      l.agents.map(a => `<tr><td>${esc(a.agent)}</td><td class="num">${a.calls}</td><td class="num">${fmtTok(a.tokens)}</td><td class="num">${fmtUsd(a.cost_usd)}</td><td>${fmtTime(a.last_ts)}</td></tr>`).join("")
+    }</tbody></table><div class="n muted" style="margin-top:4px">Un agent = un span Inspect de type « agent » (agent(), as_tool, handoff, run). Les appels hors span sont comptés sous « main ».</div>`;
+  }
+
+  html += artifactSection(l, base);
+  if (l.grade_error) html += `<div class="err">Notation partielle : ${esc(l.grade_error)}</div>`;
+
+  if (l.last_tool || l.last_message) {
+    html += `<h3>Dernière activité de l'agent</h3>`;
+    if (l.last_tool) html += `<div class="n muted">${esc(l.last_tool.function)} · ${fmtTime(l.last_tool.ts)}</div><pre>${esc(l.last_tool.args)}</pre>`;
+    if (l.last_message) html += `<div class="n muted" style="margin-top:8px">message · ${fmtTime(l.last_message.ts)}</div><pre>${esc(l.last_message.text)}</pre>`;
+  }
+  return html;
+}
+
+const pct = v => v == null ? "—" : (100 * v).toFixed(0) + " %";
+function checkOf(a, metric) {
+  const cs = (a.checks || []).filter(c => c.metric === metric);
+  return cs.find(c => c.axis === "rows") || cs[0];
+}
+function artifactSection(l, base) {
+  const arts = l.artifacts || [];
+  if (!arts.length) return "";
+  const baseArts = Object.fromEntries((base?.latest?.artifacts || []).map(a => [a.artifact_id, a]));
+  let html = `<h3>Artefacts : généré vs référence</h3>
+  <div class="dlegend"><span><i style="background:var(--series-1)"></i>Lignes trouvées</span><span><i style="background:var(--series-2)"></i>Manquantes</span><span><i style="background:var(--series-3)"></i>En trop</span></div>
+  <table><thead><tr><th>Artefact</th><th class="num">Score</th>${base ? '<th class="num">Δ baseline</th>' : ""}<th>Lignes (vs référence)</th><th>Où ça diffère</th></tr></thead><tbody>`;
+  for (const a of arts) {
+    const f1 = checkOf(a, "f1") || checkOf(a, "label_f1") || checkOf(a, "interval_f1");
+    const val = checkOf(a, "ccc") || checkOf(a, "spearman");
+    const d = f1?.details || {}, vd = val?.details || {};
+    const tp = d.true_positive, fn = d.false_negative, fp = d.false_positive;
+    let bar = '<span class="muted">—</span>';
+    if (tp != null) {
+      const tot = Math.max(1, tp + fn + fp);
+      const seg = (n, c, lab) => n ? `<span style="width:${100 * n / tot}%;background:var(--${c})" title="${lab} : ${n}"></span>` : "";
+      bar = `<div class="diffbar">${seg(tp, "series-1", "trouvées")}${seg(fn, "series-2", "manquantes")}${seg(fp, "series-3", "en trop")}</div>
+        <div class="diag">${tp} / ${d.expected_count ?? tp + fn} attendues · ${fp} en trop</div>`;
+    }
+    // diagnosis: which factor costs the most
+    const factors = [];
+    if (d.recall != null) factors.push(["rappel (lignes manquantes)", d.recall]);
+    if (d.precision != null) factors.push(["précision (lignes en trop)", d.precision]);
+    if (val) factors.push([`valeurs (${val.metric.toUpperCase()} sur ${vd.row_intersection_count ?? "?"} lignes communes)`, val.score]);
+    factors.sort((x, y) => x[1] - y[1]);
+    let diag = factors.length ? factors.map(([n, v], i) => i === 0 && v < 0.95 ? `<b>${n} ${pct(v)}</b>` : `${n} ${pct(v)}`).join(" · ") : '<span class="muted">pas de détail du grader</span>';
+    if ((vd.missing_requested_columns || []).length) diag += `<br>colonnes manquantes : ${vd.missing_requested_columns.map(esc).join(", ")}`;
+    if (!a.present) diag = "fichier absent → score 0";
+    const b = baseArts[a.artifact_id];
+    const delta = b && a.score != null && b.score != null ? a.score - b.score : null;
+    html += `<tr><td>${esc(a.artifact_id)}<div class="diag">${a.present ? (a.mtime ? "écrit " + fmtTime(a.mtime) : "") : "non écrit"}</div></td>
+      <td class="num">${fmtScore(a.score)}</td>
+      ${base ? `<td class="num ${delta > 0.005 ? "delta-pos" : delta < -0.005 ? "delta-neg" : ""}">${delta == null ? "—" : (delta > 0 ? "+" : "") + delta.toFixed(3)}</td>` : ""}
+      <td>${bar}</td><td class="diag">${diag}</td></tr>`;
+  }
+  html += `</tbody></table><div class="n muted" style="margin-top:4px">Comptes et ratios issus des checks du grader officiel (F1 sur les clés de lignes, CCC/Spearman sur les valeurs). Aucune clé ni valeur de la référence n'est affichée.</div>`;
+  if (!l.score_is_final) html += `<div class="n muted">* score partiel : sorties copiées et notées pendant le run (vérité terrain sur l'hôte, jamais dans le sandbox).</div>`;
+  return html;
+}
+
+function drawCharts(details) {
+  const r = RUNS.find(x => x.run_id === details.dataset.id); if (!r) return;
+  const base = baselineFor(r);
+  const pts = (run, key, src) => src === "timeline"
+    ? (run.latest?.agent_timeline || []).map(b => [b.elapsed_s, b.n_agents])
+    : (HIST[run.run_id] || []).filter(h => h[key] != null).map(h => [h.elapsed_s, h[key]]);
+  details.querySelectorAll(".chart").forEach(el => lineChart(el, [
+    { name: "Ce run", color: "var(--series-1)", pts: pts(r, el.dataset.key, el.dataset.src) },
+    ...(base ? [{ name: "Baseline", color: "var(--series-2)", pts: pts(base, el.dataset.key, el.dataset.src) }] : []),
+  ]));
+}
+
+function lineChart(el, series) {
+  const W = 520, H = 200, P = { l: 44, r: 12, t: 8, b: 26 };
+  const isInt = el.dataset.fmt === "int";
+  const fmt = el.dataset.fmt === "usd" ? fmtUsd : isInt ? (v => v == null ? "—" : String(Math.round(v))) : fmtScore;
+  const all = series.flatMap(s => s.pts);
+  el.innerHTML = `<div class="ct">${esc(el.dataset.title)}</div>` +
+    (series.length > 1 ? `<div class="legend">${series.map(s => `<span><i style="background:${s.color}"></i>${s.name}</span>`).join("")}</div>` : "");
+  if (!all.length) { el.innerHTML += `<div class="muted" style="padding:30px 0">Pas encore de données.</div>`; return; }
+  const xMax = Math.max(3600, ...all.map(p => p[0]));
+  let yMax = Math.max(...all.map(p => p[1])); yMax = el.dataset.fmt === "score" ? Math.max(0.1, Math.min(1, yMax * 1.15)) : isInt ? Math.max(4, Math.ceil(yMax / 4) * 4) : Math.max(0.01, yMax * 1.15);
+  const X = x => P.l + (W - P.l - P.r) * x / xMax, Y = y => H - P.b - (H - P.t - P.b) * y / yMax;
+  const hourStep = xMax > 12 * 3600 ? 4 : xMax > 6 * 3600 ? 2 : 1;
+  let g = "";
+  for (let i = 0; i <= 4; i++) { const v = yMax * i / 4, y = Y(v);
+    g += `<line x1="${P.l}" x2="${W - P.r}" y1="${y}" y2="${y}" stroke="var(--grid)"/><text x="${P.l - 6}" y="${y + 4}" text-anchor="end" font-size="11" fill="var(--text-muted)">${fmt(v)}</text>`; }
+  for (let h = 0; h * 3600 <= xMax; h += hourStep) { const x = X(h * 3600);
+    g += `<text x="${x}" y="${H - 8}" text-anchor="middle" font-size="11" fill="var(--text-muted)">${h} h</text>`; }
+  const pathD = ps => isInt
+    ? ps.map((p, i) => (i ? `H${X(p[0]).toFixed(1)}V${Y(p[1]).toFixed(1)}` : `M${X(p[0]).toFixed(1)},${Y(p[1]).toFixed(1)}`)).join("")
+    : ps.map((p, i) => (i ? "L" : "M") + X(p[0]).toFixed(1) + "," + Y(p[1]).toFixed(1)).join("");
+  const lines = series.map(s => s.pts.length ? `<path d="${pathD(s.pts)}" fill="none" stroke="${s.color}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>` +
+    (s.pts.length < 3 ? s.pts.map(p => `<circle cx="${X(p[0])}" cy="${Y(p[1])}" r="4" fill="${s.color}" stroke="var(--surface-1)" stroke-width="2"/>`).join("") : "") : "").join("");
+  el.insertAdjacentHTML("beforeend", `<svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="${esc(el.dataset.title)} en fonction du temps écoulé">${g}${lines}
+    <line class="xh" y1="${P.t}" y2="${H - P.b}" stroke="var(--text-muted)" stroke-dasharray="3 3" visibility="hidden"/>
+    <rect x="${P.l}" y="${P.t}" width="${W - P.l - P.r}" height="${H - P.t - P.b}" fill="transparent"/></svg><div class="tip"></div>`);
+  const svg = el.querySelector("svg"), tip = el.querySelector(".tip"), xh = el.querySelector(".xh");
+  svg.addEventListener("mousemove", ev => {
+    const b = svg.getBoundingClientRect(), sx = (ev.clientX - b.left) * W / b.width;
+    if (sx < P.l || sx > W - P.r) return;
+    const t = (sx - P.l) / (W - P.l - P.r) * xMax;
+    xh.setAttribute("x1", sx); xh.setAttribute("x2", sx); xh.setAttribute("visibility", "visible");
+    const rows = series.map(s => { let v = null; for (const p of s.pts) { if (p[0] > t) break; v = p[1]; }
+      return `<div><i style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${s.color};margin-right:5px"></i>${s.name} : <b>${fmt(v)}</b></div>`; }).join("");
+    tip.innerHTML = `<div class="muted">t = ${fmtDur(t)}</div>${rows}`;
+    tip.style.display = "block";
+    const px = (ev.clientX - el.getBoundingClientRect().left);
+    tip.style.left = Math.min(px + 12, el.clientWidth - tip.offsetWidth - 4) + "px"; tip.style.top = "40px";
+  });
+  svg.addEventListener("mouseleave", () => { tip.style.display = "none"; xh.setAttribute("visibility", "hidden"); });
+}
+
+function tickDeadline() {
+  const s = (DEADLINE - Date.now()) / 1000;
+  document.getElementById("deadline").textContent = s > 0 ? `Rendu dans ${fmtDur(s)} (dim. 14:00 PT)` : "Deadline passée";
+}
+tickDeadline(); setInterval(tickDeadline, 30_000);
+load(); setInterval(load, REFRESH_MS);
+</script>
+</body>
+</html>

@@ -223,3 +223,6 @@ Task numbers map to stable paper IDs in the Hugging Face release manifest:
 ## License
 
 Edison-authored code and benchmark materials are licensed under CC BY-SA 4.0. Mirrored raw scientific data and published artifacts retain their original upstream terms (see `NOTICE`).
+## Outils
+
+- [`tools/bixdash`](tools/bixdash/) : dashboard des runs (collecteur en lecture seule sur chaque VM, site web, import des runs terminés). Voir son README.
