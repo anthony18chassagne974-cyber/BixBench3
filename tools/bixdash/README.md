@@ -123,3 +123,34 @@ envoyer `http://<hôte>:8050/?token=un-secret` (cookie posé, 7 jours).
   compte de service limité à `roles/storage.objectViewer` sur le bucket
   (`GOOGLE_APPLICATION_CREDENTIALS=key.json`) et un tunnel (cloudflared ou `ssh -L`) pour
   les coéquipiers sans accès SUNet.
+
+## Integrated runner launch
+
+The runner can install the VM collector automatically before starting the analyst:
+
+```sh
+uv run bixbench3 run --task 9 --project YOUR_PROJECT \
+  --model openai/gpt-5.4-mini --effort max \
+  --results-bucket gs://YOUR_RESULTS_BUCKET \
+  --track-live --run-description "Task 9 full baseline" --condition baseline-task9
+```
+
+Choose hardware/runtime flags appropriate to the task as usual. `--task11-runtime`
+remains restricted to task 11; live tracking does not change that restriction.
+The collector is copied from the local checkout, so existing machine images do
+not need to be rebuilt for monitoring. Both files in `tools/bixdash/vm/` must be
+available in the launching checkout. The installed systemd timer snapshots every
+five minutes, using Nice=19 and idle I/O priority.
+
+Integrated launches default to `--tracking-grade-every 0`: no periodic partial
+grading, to avoid copying outputs and rerunning the scientific grader during a
+baseline. The final official score is still collected when available. Opt into
+partial grading explicitly with e.g. `--tracking-grade-every 900`; it adds work
+on the run VM even though it does not change the agent's files or instructions.
+
+A description is required with `--track-live`, as is a results bucket. The
+manifest records description, condition and grading cadence. A final collector
+snapshot is requested after grading/upload. Monitoring costs and token totals
+remain estimates and may exclude compaction or judge calls not present in the
+live Inspect buffer. A collector installation error prevents the analyst launch
+and follows the runner's existing submission-failure cleanup behavior.

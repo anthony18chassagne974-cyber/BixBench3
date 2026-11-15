@@ -44,3 +44,11 @@ git switch -c exp/YOUR_VERSION
 Keep each experimental run isolated, retain its code commit and record outputs in a new `iterations/<version>/` directory. Do not assume an existing experimental VM runs this exact commit: verify its source before use.
 
 Pre-publication baseline validation: 146 tests passed, 2 skipped (missing companion PhDval checkout), Ruff clean. A focused verification is recorded in the publishing commit's work log. These checks do not establish scientific equivalence of the reduced runtime/hardware.
+
+## Live experiment tracking
+
+Use `--track-live --run-description "What this run tests" --condition YOUR_VERSION`
+with a private `--results-bucket`. George's bixdash collector is installed on the
+VM before the analyst starts; no runtime image rebuild is needed. Default cadence
+is five minutes, with partial grading disabled (`--tracking-grade-every 0`). See
+[the bixdash integration guide](tools/bixdash/README.md#integrated-runner-launch).

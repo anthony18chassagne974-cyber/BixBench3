@@ -676,3 +676,43 @@ def test_runtime_build_creates_both_private_compose_images() -> None:
     assert "network_gateway/Dockerfile" in script
     assert "docker image inspect bixbench3-network-gateway:1.0.0" in smoke
     assert "docker compose -f sandbox/compose.yaml config" in smoke
+
+
+def test_live_tracking_installs_separate_collector_without_partial_grading(
+    task: TaskSpec, tmp_path: Path,
+) -> None:
+    from dataclasses import replace
+
+    executor = RecordingExecutor()
+    source = tmp_path / "tools" / "bixdash" / "vm"
+    source.mkdir(parents=True)
+    for name in ("collect.py", "install_collector.sh"):
+        (source / name).write_text("# collector fixture\n")
+    runner = GCPRunner(
+        project="example-project", executor=executor, repo_root=tmp_path,
+        settings=RuntimeSettings(track_live=True, run_description="Task 9 baseline", run_condition="baseline-task9"),
+    )
+    model = resolve_model("openai/gpt-5.4-mini", "max")
+    plan = runner.build_run_plan(task=task, model=model, results_bucket="gs://example-results")
+    runner._install_live_tracking(plan)
+    assert len(executor.calls) == 2
+    assert "scp" in executor.calls[0]
+    command = executor.calls[1][-1]
+    assert "--grade-every 0" in command
+    assert "--interval 5min" in command
+    assert "'Task 9 baseline'" in command
+    script = remote_run_script(plan, runner.settings)
+    assert "# RUN_DESCRIPTION: Task 9 baseline" in script
+    assert "systemctl start bixdash-collect.service || true" in script
+    assert "bixdash-collect.service" not in remote_run_script(plan, replace(runner.settings, track_live=False))
+
+
+def test_tracking_requires_description_and_nonnegative_interval() -> None:
+    from bixbench3.cli import _runner
+
+    with pytest.raises(ValueError, match="description"):
+        _runner("project", track_live=True)
+    with pytest.raises(ValueError, match="nonnegative"):
+        _runner("project", tracking_grade_every=-1)
+    with pytest.raises(ValueError, match="single-line"):
+        _runner("project", run_description="first\nsecond")

@@ -429,6 +429,8 @@ class GCPRunner:
                 plan.commands["install_run_script"],
                 input_text=remote_run_script(plan, self.settings),
             )
+            if self.settings.track_live:
+                self._install_live_tracking(plan)
             self.executor.run(plan.commands["start_run_service"])
         except subprocess.CalledProcessError as error:
             if vm_created:
@@ -505,6 +507,24 @@ class GCPRunner:
                 else lifecycle_command("status", run_id, self.project)
             ),
         }
+
+    def _install_live_tracking(self, plan: RunPlan) -> None:
+        """Install the isolated collector before starting the analyst service."""
+        collector_dir = self.repo_root / "tools" / "bixdash" / "vm"
+        for filename in ("collect.py", "install_collector.sh"):
+            if not (collector_dir / filename).is_file():
+                raise RuntimeError(f"missing live tracking source: {filename}")
+        base = ("gcloud", "--project", self.project)
+        self.executor.run((
+            *base, "compute", "scp", "--recurse", str(collector_dir.resolve()),
+            f"{plan.layout.vm_name}:~/bixdash-vm", f"--zone={plan.zone}",
+        ))
+        self.executor.run(ssh_argv(base, plan.layout.vm_name, plan.zone, (
+            "sudo", "bash", "bixdash-vm/install_collector.sh",
+            "--description", self.settings.run_description,
+            "--condition", self.settings.run_condition,
+            "--interval", "5min", "--grade-every", str(self.settings.tracking_grade_every),
+        )))
 
     def complete_run(self, run_id: str) -> dict[str, Any]:
         """Collect a finished detached run and delete its VM."""
@@ -1146,6 +1166,12 @@ class GCPRunner:
             "retention": {
                 "mode": "full_bundle" if plan.results_uri else "scores_only",
                 "results_uri": plan.results_uri,
+            },
+            "live_tracking": {
+                "enabled": self.settings.track_live,
+                "description": self.settings.run_description,
+                "condition": self.settings.run_condition,
+                "grade_every_seconds": self.settings.tracking_grade_every,
             },
             "process_judge": process_judge_config(),
             "started_at": datetime.now(UTC).isoformat(),
@@ -2048,6 +2074,7 @@ if [ "$upload_status" -ne 0 ]; then
 fi
 """
     return f"""set -uo pipefail
+# RUN_DESCRIPTION: {settings.run_description}
 write_status() {{
   python3 - "$1" "$2" "$3" {_RUN_STATUS_PATH} <<'PY'
 from __future__ import annotations
@@ -2258,6 +2285,7 @@ value["process_judge"] = process_judge
 path.write_text(json.dumps(value, indent=2, sort_keys=True) + "\\n", encoding="utf-8")
 PY
 {upload}
+{("systemctl start bixdash-collect.service || true" if settings.track_live else "")}
 exit "$run_status"
 """
 

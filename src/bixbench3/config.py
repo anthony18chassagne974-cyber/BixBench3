@@ -98,6 +98,10 @@ class RuntimeSettings:
     machine_type: str = RUN_MACHINE_TYPE
     include_10x: bool = True
     analyst_cost_limit: float | None = None
+    track_live: bool = False
+    run_description: str = ""
+    run_condition: str = "baseline"
+    tracking_grade_every: int = 0
     boot_disk_gb: int = RUN_BOOT_DISK_GB
     runtime_image_name: str = RUNTIME_IMAGE_NAME
     runtime_image_family: str = RUNTIME_IMAGE_FAMILY
