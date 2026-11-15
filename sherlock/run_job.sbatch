@@ -80,8 +80,8 @@ ENV_HASH=""
 if [ -n "${BB3_SANDBOX_SIF:-}" ]; then
   SANDBOX_SIF=$BB3_SANDBOX_SIF
 elif [ -n "${BB3_TASK_ENV:-}" ]; then
-  git -C "$REPO" cat-file -e "HEAD:env/$BB3_TASK_ENV" 2>/dev/null || { echo "BB3_TASK_ENV=$BB3_TASK_ENV: no committed env/$BB3_TASK_ENV in $REPO"; exit 2; }
-  ENV_HASH=$(for p in "env/$BB3_TASK_ENV" env/build_sif.sh env/sif.def.template env/link_path.sh; do git -C "$REPO" rev-parse "HEAD:$p"; done | sha256sum | cut -c1-12)
+  (cd "$REPO" && git cat-file -e "HEAD:env/$BB3_TASK_ENV") 2>/dev/null || { echo "BB3_TASK_ENV=$BB3_TASK_ENV: no committed env/$BB3_TASK_ENV in $REPO"; exit 2; }
+  ENV_HASH=$(for p in "env/$BB3_TASK_ENV" env/build_sif.sh env/sif.def.template env/link_path.sh; do (cd "$REPO" && git rev-parse "HEAD:$p"); done | sha256sum | cut -c1-12)
   SANDBOX_SIF=$IMAGES/bixbench3-sandbox_1.0.0-${BB3_TASK_ENV}env-$ENV_HASH.sif
   if [ ! -f "$SANDBOX_SIF" ]; then
     echo "[sherlock] $(basename "$SANDBOX_SIF") not found: building it (first use of this env version)"
