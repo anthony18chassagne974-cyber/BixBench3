@@ -748,3 +748,14 @@ def test_no10x_runtime_rejects_licensed_task_before_cloud(tmp_path: Path, task: 
     with pytest.raises(ValueError, match='requires licensed'):
         runner.run_task(task=task, model=resolve_model('openai/gpt-5.4-mini', 'max'))
     assert executor.calls == []
+
+
+def test_restored_standard_boot_avoids_inheriting_machine_image_disks(task: TaskSpec) -> None:
+    from bixbench3.cli import _runner
+
+    runner = _runner('example-project', boot_disk_source='restored-standard-boot',
+                     boot_disk_type='pd-standard')
+    plan = runner.build_run_plan(task=task, model=resolve_model('openai/gpt-5.4-mini', 'max'), results_bucket=None)
+    command = plan.commands['create_run_vm']
+    assert not any(a.startswith(('--source-machine-image=', '--create-disk=')) for a in command)
+    assert '--disk=name=restored-standard-boot,boot=yes,auto-delete=yes,device-name=persistent-disk-0' in command

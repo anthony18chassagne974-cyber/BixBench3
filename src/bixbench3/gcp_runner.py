@@ -1166,6 +1166,7 @@ class GCPRunner:
                 "machine_type": self.settings.machine_type,
                 "boot_disk_gb": self.settings.boot_disk_gb,
                 "boot_disk_type": self.settings.boot_disk_type,
+                "boot_disk_source": self.settings.boot_disk_source,
                 "data_disk": plan.layout.data_disk_name,
                 "data_disk_mode": "read-only",
                 "vm_name": plan.layout.vm_name,
@@ -1225,6 +1226,9 @@ def build_run_commands(
         ),
         f"--labels={labels},run={slugify(layout.run_id, maximum=20)}",
     ]
+    if settings.boot_disk_source:
+        run_create = [arg for arg in run_create if not arg.startswith(("--create-disk=", "--source-machine-image="))]
+        run_create.append(f"--disk=name={settings.boot_disk_source},boot=yes,auto-delete=yes,device-name={settings.runtime_boot_device}")
     if service_account is None:
         run_create.extend(("--no-service-account", "--no-scopes"))
     else:
