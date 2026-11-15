@@ -7,7 +7,7 @@ from inspect_ai.tool import bash_session, python, text_editor
 from inspect_ai.util import sandbox
 
 from .model_info import register_model_info
-from .tools import request_web_access, run_subagent
+from .tools import request_web_access, run_subagent, run_subagents
 
 register_model_info()
 
@@ -20,7 +20,8 @@ def bixbench3_agent() -> Agent:
             python(timeout=600),
             text_editor(timeout=120),
             request_web_access(),
-            run_subagent(depth=1),  # v4 dag-orchestrator
+            run_subagent(depth=1),  # v4/v5 dag-orchestrator
+            run_subagents(depth=1),  # v5: one dependency level in parallel
         ],
         compaction=CompactionAuto(),
     )
