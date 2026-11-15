@@ -19,12 +19,16 @@ sed -e "s#@BASE_SIF@#$BASE_SIF#" -e "s#@TASK@#$TASK#g" -e "s#@EXACT_PINS@#${EXAC
 if [ "${PRINT_DEF:-0}" = 1 ]; then cat "$DEF"; rm -f "$DEF"; exit 0; fi
 export APPTAINER_TMPDIR=${L_SCRATCH_JOB:-${TMPDIR:-/tmp}}
 (cd "$ROOT" && apptainer build --fakeroot "$OUT_SIF.tmp" "$DEF")
-mv "$OUT_SIF.tmp" "$OUT_SIF"
 rm -f "$DEF"
-# offline check: point proxies at a closed port so any network access fails
+# offline check BEFORE publishing: proxies point at a closed port so any network access fails
 VERIFY="bash /opt/task-env/verify_env.sh"
 [ "$TASK" = task11 ] && VERIFY="micromamba run -n task11 Rscript /opt/task-env/verify_env.R"
-apptainer exec --containall --env "HTTP_PROXY=http://127.0.0.1:9,HTTPS_PROXY=http://127.0.0.1:9,http_proxy=http://127.0.0.1:9,https_proxy=http://127.0.0.1:9" \
-  "$OUT_SIF" bash -c "$VERIFY"
+if ! apptainer exec --containall --env "HTTP_PROXY=http://127.0.0.1:9,HTTPS_PROXY=http://127.0.0.1:9,http_proxy=http://127.0.0.1:9,https_proxy=http://127.0.0.1:9" \
+     "$OUT_SIF.tmp" bash -c "$VERIFY"; then
+  mv "$OUT_SIF.tmp" "$OUT_SIF.failed"
+  echo "verification failed; image kept for debugging as $OUT_SIF.failed" >&2
+  exit 1
+fi
+mv "$OUT_SIF.tmp" "$OUT_SIF"
 apptainer exec "$OUT_SIF" cat /opt/task-env/MANIFEST.json
 sha256sum "$OUT_SIF" | tee "$OUT_SIF.sha256"

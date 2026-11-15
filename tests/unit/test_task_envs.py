@@ -30,3 +30,14 @@ def test_shell_scripts_parse():
     for script in ["env/build_sif.sh", "env/link_path.sh", "env/task9/build.sh", "env/task9/verify_env.sh",
                    "env/task11/build.sh", "sherlock/run_job.sbatch", "sherlock/submit.sh"]:
         subprocess.run(["bash", "-n", str(ROOT / script)], check=True)
+
+
+def test_sherlock_job_reuses_or_builds_task_env_image():
+    job = (ROOT / "sherlock/run_job.sbatch").read_text()
+    assert 'SANDBOX_SIF=$IMAGES/bixbench3-sandbox_1.0.0.sif' in job          # default unchanged
+    assert "BB3_TASK_ENV" in job and "flock 9" in job and "git archive HEAD env" in job
+    assert "env/build_sif.sh" in job and "sandbox_image.json" in job
+    build = (ROOT / "env/build_sif.sh").read_text()
+    assert build.index('"$OUT_SIF.tmp" bash -c "$VERIFY"') < build.index('mv "$OUT_SIF.tmp" "$OUT_SIF"')  # verify before publish
+    submit = (ROOT / "sherlock/submit.sh").read_text()
+    assert 'TASK_ENV=task$TASK' in submit and "BB3_TASK_ENV=$TASK_ENV" in submit

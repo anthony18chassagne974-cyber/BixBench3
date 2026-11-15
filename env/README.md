@@ -16,17 +16,24 @@ pipeline step on synthetic data **without network**, and writes `/opt/task-env/M
 
 ## Sherlock (Apptainer)
 
-Build once per task on a compute node with network (fakeroot):
+Just ask for the environment when submitting; the job takes care of the image:
 ```bash
-srun -p dev -c 4 --mem=16G -t 2:00:00 bash env/build_sif.sh task9
-# -> $SCRATCH/bixbench3/images/bixbench3-sandbox_1.0.0-task9env.sif (+ .sha256), offline verification printed
+BB3_TASK_ENV=auto BB3_CPUS=6 BB3_MEM_GB=32 \
+  sherlock/submit.sh t9-env . 9 v1-env "Task 9 with preinstalled env" normal
 ```
-Run with it (the run records `sandbox_image.json`: path, sha256, task label):
-```bash
-BB3_SANDBOX_SIF=/scratch/users/<you>/bixbench3/images/bixbench3-sandbox_1.0.0-task9env.sif \
-  BB3_CPUS=6 BB3_MEM_GB=32 sherlock/submit.sh t9-env ../wt/<branch> 9 v1-env "Task 9 with preinstalled env" normal
-```
-Without `BB3_SANDBOX_SIF` nothing changes: the stock sandbox SIF is used.
+- `BB3_TASK_ENV=auto` means `task<TASK>` (here `task9`); `task9` / `task11` also work.
+- The job looks for `$SCRATCH/bixbench3/images/bixbench3-sandbox_1.0.0-task9env-<hash>.sif`, where
+  `<hash>` comes from the **committed** `env/` files of the Sherlock checkout
+  (`~/bixbench3-sherlock/BixBench3`, which must contain `env/`). Found → reused. Not found →
+  built inside the job first (`env/build_sif.sh`, network + `--fakeroot`, offline verification;
+  a failing image is never published), under a lock so parallel repeats build it once. The
+  agent's clock only starts after that. Changing anything in `env/task9` gives a new hash, hence
+  a fresh image; old images stay untouched.
+- Each run records `sandbox_image.json` (path, env hash, sha256, task label) and, if it built the
+  image, `task_env_build.log`.
+- Without `BB3_TASK_ENV` nothing changes: the stock sandbox SIF is used (baselines).
+- Pre-building is optional (`srun ... bash env/build_sif.sh task9 <base.sif> <out.sif>`);
+  `BB3_SANDBOX_SIF=<path>` forces a given SIF.
 
 ## GCP / Docker
 

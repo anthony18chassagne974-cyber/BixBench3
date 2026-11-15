@@ -9,7 +9,9 @@
 #   env: BB3_CPUS (default 6), BB3_MEM_GB (default 32), BB3_REPEATS (default 1), BB3_OWNER (default team),
 #        BB3_CONSTRAINT (default CPU_GEN:RME = AMD EPYC 7502 nodes: one CPU type for every run, so repeats
 #        and conditions are comparable; without it Slurm mixes 2016 Broadwell and newer nodes),
-#        BB3_SANDBOX_SIF (optional: task-environment SIF on Sherlock built by env/build_sif.sh; recorded per run)
+#        BB3_TASK_ENV (optional: task9 | task11 | auto = task<TASK>): run with the preinstalled task environment;
+#        the job reuses its image or builds it first (see env/README.md),
+#        BB3_SANDBOX_SIF (optional: explicit SIF path on Sherlock, overrides BB3_TASK_ENV)
 #   pass --harness-overlay for experiment branches (anything that changes src/bixbench3/inspect_harness)
 set -euo pipefail
 NAME=$1; CHECKOUT=$(cd "$2" && pwd); TASK=$3; CONDITION=$4; DESCRIPTION=$5; PARTITION=$6; shift 6
@@ -18,19 +20,29 @@ SHERLOCK_HOST=${BB3_SHERLOCK_HOST:-sherlock}
 REMOTE_ROOT=${BB3_REMOTE_ROOT:-/scratch/users/sbennani/bixbench3}
 # Sherlock partitions cap memory per CPU (normal: MaxMemPerCPU=8000 MB); above it Slurm silently adds CPUs
 [ $((MEM * 1024)) -le $((CPUS * 8000)) ] || { echo "BB3_MEM_GB=$MEM needs more than $CPUS CPUs at 8000 MB/CPU: Slurm would change the CPU count"; exit 1; }
+TASK_ENV=${BB3_TASK_ENV:-}
+[ "$TASK_ENV" = auto ] && TASK_ENV=task$TASK
+if [ -n "$TASK_ENV" ] && [ -z "${BB3_SANDBOX_SIF:-}" ]; then
+  git -C "$CHECKOUT" cat-file -e "HEAD:env/$TASK_ENV" 2>/dev/null || { echo "no committed env/$TASK_ENV in $CHECKOUT"; exit 1; }
+fi
+EXPORTS=ALL
+[ -n "${BB3_SANDBOX_SIF:-}" ] && EXPORTS="$EXPORTS,BB3_SANDBOX_SIF=$BB3_SANDBOX_SIF"
+[ -n "$TASK_ENV" ] && EXPORTS="$EXPORTS,BB3_TASK_ENV=$TASK_ENV"
+ENV_NOTE=${BB3_SANDBOX_SIF:+, sandbox $(basename "$BB3_SANDBOX_SIF")}
+[ -z "$ENV_NOTE" ] && [ -n "$TASK_ENV" ] && ENV_NOTE=", task env $TASK_ENV"
 MAIN=$(cd "$(dirname "$0")/.." && pwd)
 BUNDLES=${BB3_LOCAL_BUNDLES:-$MAIN/runs/sherlock-bundles}
 mkdir -p "$BUNDLES"
 for r in $(seq 1 "$REPEATS"); do
   B=$NAME-r$r
   (cd "$CHECKOUT" && uv run --project "$MAIN" python "$MAIN/sherlock/prepare_run.py" --task "$TASK" \
-    --condition "$CONDITION" --description "$DESCRIPTION [repeat $r/$REPEATS, ${CPUS} CPU/${MEM} GB, Sherlock${BB3_SANDBOX_SIF:+, sandbox $(basename "$BB3_SANDBOX_SIF")}]" \
+    --condition "$CONDITION" --description "$DESCRIPTION [repeat $r/$REPEATS, ${CPUS} CPU/${MEM} GB, Sherlock$ENV_NOTE]" \
     --owner "${BB3_OWNER:-team}" --checkout "$CHECKOUT" --cpus "$CPUS" --mem-gb "$MEM" --repeat "$r" \
     --out "$BUNDLES/$B" "$@" >/dev/null)
   REMOTE=$REMOTE_ROOT/bundles/$B
   ssh -o BatchMode=yes "$SHERLOCK_HOST" "test ! -e $REMOTE" 2>/dev/null || { echo "remote bundle exists: $REMOTE"; exit 1; }
   rsync -az "$BUNDLES/$B/" "$SHERLOCK_HOST:$REMOTE/" 2>/dev/null
-  job=$(ssh -o BatchMode=yes "$SHERLOCK_HOST" "cd ~/bixbench3-sherlock && sbatch --parsable -p $PARTITION ${CONSTRAINT:+-C $CONSTRAINT} ${BB3_SANDBOX_SIF:+--export=ALL,BB3_SANDBOX_SIF=$BB3_SANDBOX_SIF} -c $CPUS --mem=${MEM}G -J bb3-$B -o $REMOTE/slurm-%j.out BixBench3/sherlock/run_job.sbatch $REMOTE" 2>/dev/null | grep -v '^Automated')
+  job=$(ssh -o BatchMode=yes "$SHERLOCK_HOST" "cd ~/bixbench3-sherlock && sbatch --parsable -p $PARTITION ${CONSTRAINT:+-C $CONSTRAINT} $([ "$EXPORTS" != ALL ] && echo "--export=$EXPORTS") -c $CPUS --mem=${MEM}G -J bb3-$B -o $REMOTE/slurm-%j.out BixBench3/sherlock/run_job.sbatch $REMOTE" 2>/dev/null | grep -v '^Automated')
   [ -n "$job" ] || { echo "sbatch failed for $B"; exit 1; }
   echo "$B -> job $job"
 done
