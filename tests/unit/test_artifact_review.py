@@ -197,9 +197,12 @@ def test_react_loop_gates_artifacts_and_final_submit(tmp_path: Path, monkeypatch
     # One queue serves the agent and the reviewer, in call order.
     model = get_model("mockllm/model", custom_outputs=[
         ModelOutput.for_tool_call("mockllm/model", "submit_artifact", {"artifact_id": "counts", "path": "work/counts.tsv"}),
+        # dual review: the local and the consistency reviewer each take one output per submission
         ModelOutput.from_content("mockllm/model", "VERDICT: REVISE\n- add a third sample"),
+        ModelOutput.from_content("mockllm/model", "VERDICT: REVISE\n- add a third sample\nNOTES: none"),
         ModelOutput.for_tool_call("mockllm/model", "submit_artifact", {"artifact_id": "counts", "path": "work/counts.tsv", "note": "two samples are specified"}),
         ModelOutput.from_content("mockllm/model", "VERDICT: ACCEPT"),
+        ModelOutput.from_content("mockllm/model", "VERDICT: ACCEPT\nNOTES:\n- count tables use versioned ENSG ids"),
         ModelOutput.for_tool_call("mockllm/model", "submit", {"answer": "done"}),
         ModelOutput.for_tool_call("mockllm/model", "submit", {"answer": "done"}),
     ])
@@ -219,6 +222,7 @@ def test_react_loop_gates_artifacts_and_final_submit(tmp_path: Path, monkeypatch
     tools = [event for event in sample.events if event.event == "tool"]
     assert [event.function for event in tools] == ["submit_artifact", "submit_artifact", "submit", "submit"]
     assert "not accepted (submission 1)" in tools[0].result and "add a third sample" in tools[0].result
+    assert "Local reviewer (this table only)" in tools[0].result and "Consistency reviewer (run memory)" in tools[0].result
     assert "accepted (submission 2)" in tools[1].result
     assert tools[2].error is not None and "- degs: missing" in tools[2].error.message
     assert tools[3].error is None and tools[3].result == "done"

@@ -21,6 +21,7 @@ after acceptance, once, and the next ``submit()`` call is accepted.
 
 from __future__ import annotations
 
+import asyncio
 import re
 import zlib
 from collections.abc import Awaitable, Callable
@@ -34,7 +35,7 @@ from inspect_ai.tool import Tool, ToolError, tool
 from inspect_ai.util import sandbox, store
 
 from .models import RuntimeCase
-from .review_memory import record_accepted, related_accepted
+from .review_memory import memory_reviewer_context, note_review, record_accepted
 
 _HERE = Path(__file__).parent
 SUMMARY_SCRIPT_PATH = _HERE / "sandbox_scripts" / "artifact_summary.py"
@@ -75,9 +76,11 @@ submit it unchanged and explain in `note` why it is already right.
 number {MAX_REJECTIONS + 1} of the same artifact is accepted without review.
 - Do not write required tables directly into `./outputs`; write `./outputs/METHODS.md` \
 directly (it is not reviewed). Resubmit an artifact whenever you change it.
-- The reviewer also compares each table with the most similar tables of this run it has \
-already accepted: the same kind of column (identifiers, symbols, contrast or direction \
-labels) must use the same format across artifacts.
+- Two reviewers check every table and both must accept it. The local reviewer sees only \
+this table. The consistency reviewer also remembers this run: the tables it already \
+accepted, its earlier reviews and the format conventions it noted, so the same kind of \
+column (identifiers, symbols, contrast or direction labels) must use the same format \
+across artifacts.
 
 Reviews are logged in `./work/artifact_review.md`.
 """
@@ -96,11 +99,7 @@ and columns consistent with the specification (for example one count column per 
 replicate, or one row per annotated gene);
 - identifiers: row keys and sampled names in the format the specification and its example \
 identifiers describe (prefixes, version suffixes, symbols), and sampled names and values \
-that look coherent with the column they are in;
-- consistency: when summaries of artifacts you already accepted in this run are given, the same \
-kind of column (gene identifiers with or without version suffix, symbols, contrast, direction \
-or gene-set labels, column naming) must use the same format as in those artifacts. Flag a \
-format inconsistency; never require identical values, identical genes or identical row counts.
+that look coherent with the column they are in.
 
 Do not judge scientific results, expected values, gene lists or exact row counts the \
 specification does not determine; never guess them. If the agent's note answers an \
@@ -109,6 +108,26 @@ earlier objection convincingly, accept.
 Answer with exactly "{ACCEPT}" or "{REVISE}" on the first line. With {REVISE}, follow with \
 at most 8 bullet points the agent can act on, most important first.
 """
+
+
+MEMORY_REVIEWER_ADDENDUM = """
+You are the CONSISTENCY reviewer: unlike a reviewer that sees one table, you keep a rolling
+memory of this run. It gives you the format conventions you noted earlier, the most similar
+tables you already accepted, and your most relevant earlier reviews.
+
+In addition to the checks above:
+- consistency: the same kind of column (gene identifiers with or without version suffix, symbols,
+  contrast, direction or gene-set labels, column naming and order) must use the same format as in
+  the tables you already accepted and as in your conventions. Flag a format inconsistency; never
+  require identical values, identical genes or identical row counts.
+- After your verdict and bullets, add a block that updates your memory, with at most 3 format
+  conventions this table establishes or confirms (only formats, never values or gene lists):
+  NOTES:
+  - <one convention per line>
+  Write "NOTES: none" if there is nothing new.
+"""
+
+MEMORY_REVIEWER_SYSTEM = REVIEWER_SYSTEM + MEMORY_REVIEWER_ADDENDUM
 
 
 def append_review_notice(prompt: str) -> str:
@@ -137,6 +156,7 @@ def reviewer_messages(
     note: str,
     history: list[dict[str, Any]],
     related: str = "",
+    system: str = REVIEWER_SYSTEM,
 ) -> list[ChatMessage]:
     if len(task_prompt) > PROMPT_CHARS:
         task_prompt = task_prompt[:PROMPT_CHARS] + "\n<task description truncated>"
@@ -156,14 +176,11 @@ def reviewer_messages(
         f"# Computed file summary\n\n{summary}",
     ]
     if related:
-        parts.append(
-            "# Artifacts of this run you already accepted (most similar first; for format consistency only)"
-            f"\n\n{related}"
-        )
+        parts.append(f"# Your rolling memory of this run (for format consistency only)\n\n{related}")
     if earlier:
         parts.append(f"# Your earlier feedback on this artifact\n\n{earlier}")
     parts.append(f"# Agent note\n\n{note.strip() or '(none)'}")
-    return [ChatMessageSystem(content=REVIEWER_SYSTEM), ChatMessageUser(content="\n\n".join(parts))]
+    return [ChatMessageSystem(content=system), ChatMessageUser(content="\n\n".join(parts))]
 
 
 def parse_verdict(text: str) -> bool:
@@ -210,10 +227,12 @@ class ArtifactReviewer:
         append_log: Callable[[str], Awaitable[None]],
         related: Callable[[dict[str, Any], str], Awaitable[tuple[str, list[str]]]] | None = None,
         record: Callable[[dict[str, Any], str, str, int], Awaitable[None]] | None = None,
+        note_review: Callable[[dict[str, Any], int, bool, str], Awaitable[None]] | None = None,
     ) -> None:
         self.state = state
         self.related = related  # run memory: most similar accepted artifacts (past.dev)
         self.record = record  # run memory: store an accepted artifact's summary
+        self.note_review = note_review  # run memory: store each consistency review and its notes
         self.summarize = summarize
         self.ask_model = ask_model
         self.copy = copy
@@ -242,23 +261,26 @@ class ArtifactReviewer:
         else:
             try:
                 summary = await self.summarize(source, artifact, review_seed(artifact_id, attempt))
-                related_text = ""
-                if self.related is not None:
-                    try:
-                        related_text, related_ids = await self.related(artifact, summary)
-                    except Exception:  # memory must never block a review
-                        related_text, related_ids = "", []
-                answer = (await self.ask_model(reviewer_messages(
-                    task_prompt=self.state.get(PROMPT_KEY, ""),
-                    artifact=artifact,
-                    summary=summary,
-                    note=note,
-                    history=history,
-                    related=related_text,
-                ))).strip()
-                accepted = parse_verdict(answer)
-                verdict = "accepted" if accepted else "rejected"
-                feedback = answer
+                if self.related is None:  # single local reviewer (original t9-env-reviewer)
+                    answer = (await self.ask_model(reviewer_messages(
+                        task_prompt=self.state.get(PROMPT_KEY, ""),
+                        artifact=artifact,
+                        summary=summary,
+                        note=note,
+                        history=history,
+                    ))).strip()
+                    accepted = parse_verdict(answer)
+                    verdict = "accepted" if accepted else "rejected"
+                    feedback = answer
+                else:
+                    accepted, verdict, feedback, related_ids, memory_answer = await self._dual_review(
+                        artifact, summary, note, history,
+                    )
+                    if self.note_review is not None and memory_answer is not None:
+                        try:
+                            await self.note_review(artifact, attempt, parse_verdict(memory_answer), memory_answer)
+                        except Exception:
+                            pass
             except Exception as error:  # the reviewer must never cost the run an artifact
                 verdict, accepted = f"accepted, reviewer unavailable ({type(error).__name__})", True
         destination = sandbox_output_path(artifact)
@@ -291,6 +313,39 @@ class ArtifactReviewer:
             "resubmit it unchanged and explain in `note` why it is right. "
             f"Submission {MAX_REJECTIONS + 1} of this artifact is accepted without review."
         )
+
+    async def _dual_review(
+        self, artifact: dict[str, Any], summary: str, note: str, history: list[dict[str, Any]],
+    ) -> tuple[bool, str, str, list[str], str | None]:
+        """Local reviewer (this table only) and memory reviewer (rolling run memory), in parallel."""
+        related_text, related_ids = "", []
+        try:
+            related_text, related_ids = await self.related(artifact, summary)  # type: ignore[misc]
+        except Exception:  # memory must never block a review
+            related_text, related_ids = "", []
+        common = {"task_prompt": self.state.get(PROMPT_KEY, ""), "artifact": artifact, "summary": summary,
+                  "note": note, "history": history}
+
+        async def ask(messages: list[ChatMessage]) -> str | None:
+            try:
+                return (await self.ask_model(messages)).strip()
+            except Exception:
+                return None
+
+        local, remembered = await asyncio.gather(
+            ask(reviewer_messages(**common)),
+            ask(reviewer_messages(**common, related=related_text, system=MEMORY_REVIEWER_SYSTEM)),
+        )
+        answers = {"Local reviewer (this table only)": local, "Consistency reviewer (run memory)": remembered}
+        available = {name: answer for name, answer in answers.items() if answer is not None}
+        if not available:
+            raise RuntimeError("both reviewers unavailable")
+        accepted = all(parse_verdict(answer) for answer in available.values())
+        verdict = "accepted" if accepted else "rejected"
+        if len(available) == 1:
+            verdict += f" (only the {next(iter(available)).split(' (')[0].lower()} answered)"
+        feedback = "\n\n".join(f"{name}:\n{answer}" for name, answer in available.items())
+        return accepted, verdict, feedback, related_ids, remembered
 
     async def final_issues(self) -> list[str]:
         approved = self.state.get(APPROVED_KEY, {})
@@ -366,7 +421,7 @@ def _reviewer() -> ArtifactReviewer:
     return ArtifactReviewer(
         state=_StoreState(), summarize=_summarize, ask_model=_ask_model,
         copy=_copy, file_hash=_file_hash, append_log=_append_log,
-        related=related_accepted, record=record_accepted,  # run memory (past.dev)
+        related=memory_reviewer_context, record=record_accepted, note_review=note_review,  # dual review, past.dev
     )
 
 
