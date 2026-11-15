@@ -1,0 +1,15 @@
+# Task 9 — command-line side, separate env so recent Python tools do not constrain the R 4.0 env.
+name: task9-tools
+channels:
+  - conda-forge
+  - bioconda
+  - nodefaults
+dependencies:
+  - hisat2=2.2.1        # prompt: HISAT2 v2.2.1
+  - subread=2.0.1       # prompt: featureCounts v2.0.1
+  - samtools
+  - cutadapt            # prompt: -a AAAAAAAA -a AGATCGG -q 15 -m 25 (no version pinned)
+  - fastqc              # no version pinned
+  - perl                # tag-based_RNAseq scripts
+  - pigz
+  - git

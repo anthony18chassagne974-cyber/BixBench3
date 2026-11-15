@@ -69,7 +69,44 @@ if [ "$OVERLAY" = "True" ]; then
 fi
 
 # --- images and jail on node-local disk
-cp "$IMAGES/bixbench3-sandbox_1.0.0.sif" "$IMAGES/bixbench3-network-gateway_1.0.0.sif" "$JOB/"
+# Sandbox image. Default: the stock sandbox SIF (unchanged behaviour).
+#   BB3_TASK_ENV=task9|task11 : use the preinstalled task environment (env/<task>). The image is named
+#     after the committed env files (git tree hash), so it is reused as long as env/ does not change;
+#     if it does not exist yet it is built here first (env/build_sif.sh, offline verification included),
+#     under a lock so concurrent repeats build it only once. The agent's clock starts after this.
+#   BB3_SANDBOX_SIF=<path> : use this SIF as is (overrides BB3_TASK_ENV).
+SANDBOX_SIF=$IMAGES/bixbench3-sandbox_1.0.0.sif
+ENV_HASH=""
+if [ -n "${BB3_SANDBOX_SIF:-}" ]; then
+  SANDBOX_SIF=$BB3_SANDBOX_SIF
+elif [ -n "${BB3_TASK_ENV:-}" ]; then
+  (cd "$REPO" && git cat-file -e "HEAD:env/$BB3_TASK_ENV") 2>/dev/null || { echo "BB3_TASK_ENV=$BB3_TASK_ENV: no committed env/$BB3_TASK_ENV in $REPO"; exit 2; }
+  ENV_HASH=$(for p in "env/$BB3_TASK_ENV" env/build_sif.sh env/sif.def.template env/link_path.sh; do (cd "$REPO" && git rev-parse "HEAD:$p"); done | sha256sum | cut -c1-12)
+  SANDBOX_SIF=$IMAGES/bixbench3-sandbox_1.0.0-${BB3_TASK_ENV}env-$ENV_HASH.sif
+  if [ ! -f "$SANDBOX_SIF" ]; then
+    echo "[sherlock] $(basename "$SANDBOX_SIF") not found: building it (first use of this env version)"
+    (
+      flock 9
+      if [ ! -f "$SANDBOX_SIF" ]; then
+        envsrc=$(mktemp -d "$JOB/envsrc.XXXX")
+        (cd "$REPO" && git archive HEAD env) | tar -x -C "$envsrc"   # build from committed files only
+        bash "$envsrc/env/build_sif.sh" "$BB3_TASK_ENV" "$IMAGES/bixbench3-sandbox_1.0.0.sif" "$SANDBOX_SIF"
+      fi
+    ) 9>"$SANDBOX_SIF.lock" > "$JOB/task_env_build.log" 2>&1 \
+      || { echo "[sherlock] task env build failed:"; tail -40 "$JOB/task_env_build.log"; exit 2; }
+    echo "[sherlock] task env image ready: $SANDBOX_SIF"
+  else
+    echo "[sherlock] reusing task env image $SANDBOX_SIF"
+  fi
+fi
+test -f "$SANDBOX_SIF" || { echo "sandbox SIF not found: $SANDBOX_SIF"; exit 2; }
+# copied under the stock job-local name so the rest of the job is unchanged; identity recorded
+cp "$SANDBOX_SIF" "$JOB/bixbench3-sandbox_1.0.0.sif"
+cp "$IMAGES/bixbench3-network-gateway_1.0.0.sif" "$JOB/"
+printf '{"sandbox_sif": "%s", "env_hash": "%s", "sha256": "%s", "task_env": "%s"}\n' "$SANDBOX_SIF" "$ENV_HASH" \
+  "$(sha256sum "$SANDBOX_SIF" | cut -d' ' -f1)" \
+  "$(apptainer inspect --labels "$SANDBOX_SIF" 2>/dev/null | sed -n 's/.*bixbench3.task_env: *//p' | head -1)" > "$JOB/sandbox_image.json"
+echo "[sherlock] sandbox image: $(cat "$JOB/sandbox_image.json")"
 cp "$BB3/jail/bb3jail" "$JOB/jaildir/bb3jail"
 
 # --- run root, laid out like /var/lib/bixbench3 on the VM
@@ -217,7 +254,7 @@ DEST=$SCRATCH/bixbench3/runs/$RUN_ID
 keep_copy() {  # keep_copy [quick]: quick = local copy only (must fit in Slurm's 30 s KillWait)
   mkdir -p "$DEST/sherlock"
   rsync -a --exclude workspace "$RUN_ROOT/" "$DEST/"
-  cp -a "$JOB/gateway.log" "$JOB/collector.log" "$JOB/hostexec.log" "$JOB/sandbox.json" "$JOB/supervisor.py" "$DEST/sherlock/" 2>/dev/null
+  cp -a "$JOB/gateway.log" "$JOB/collector.log" "$JOB/hostexec.log" "$JOB/sandbox.json" "$JOB/supervisor.py" "$JOB/sandbox_image.json" "$JOB/task_env_build.log" "$DEST/sherlock/" 2>/dev/null
   cp -a "$JOB/jaillog" "$JOB/squidlog" "$JOB/bixdash" "$DEST/sherlock/" 2>/dev/null
   cp -a "$XDG_DATA_HOME/inspect_ai/samplebuffer" "$DEST/sherlock/" 2>/dev/null
   echo "[sherlock] results kept in $DEST"

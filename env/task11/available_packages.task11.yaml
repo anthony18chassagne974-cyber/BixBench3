@@ -1,0 +1,22 @@
+# Section to APPEND to sandbox/available_packages.yaml for runs that use the task11 image.
+# It is rendered into the agent prompt ("Already Available Software"): this is a
+# prompt change and must be declared in the experiment's tracker section.
+  - title: Task-specific R 4.0 environment (preinstalled)
+    packages:
+      - R 4.0.2
+      - QuasR
+      - Rbowtie
+      - DESeq2
+      - biomaRt
+      - piano
+      - readxl
+      - data.table
+      - dplyr
+    description: >-
+      Run R through `micromamba run -n task11 Rscript script.R` (or `micromamba run -n task11 R`).
+      Ensembl release 100 mouse-to-human orthologs (rebuilt from the official release-100 BioMart
+      dump, columns named after the biomaRt attributes) are in
+      /opt/task-env/reference/ensembl100_mmusculus_hsapiens_orthologs.tsv with provenance next to it;
+      the live Ensembl 100 BioMart archive has been retired.
+      Exact installed versions and any difference from the requested ones are listed in
+      /opt/task-env/MANIFEST.json; report those differences in METHODS.md.
