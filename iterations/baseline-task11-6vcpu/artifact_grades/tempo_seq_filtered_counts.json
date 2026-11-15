@@ -1,0 +1,48 @@
+{
+  "artifact_id": "tempo_seq_filtered_counts",
+  "score": 0.9881381049167024,
+  "score_combination": "product",
+  "checks": [
+    {
+      "metric": "f1",
+      "score": 1.0,
+      "details": {
+        "expected_count": 30146,
+        "observed_count": 30146,
+        "true_positive": 30146,
+        "false_positive": 0,
+        "false_negative": 0,
+        "precision": 1.0,
+        "recall": 1.0
+      },
+      "axis": "rows"
+    },
+    {
+      "metric": "f1",
+      "score": 1.0,
+      "details": {
+        "expected_count": 85,
+        "observed_count": 85,
+        "true_positive": 85,
+        "false_positive": 0,
+        "false_negative": 0,
+        "precision": 1.0,
+        "recall": 1.0
+      },
+      "axis": "columns"
+    },
+    {
+      "metric": "ccc",
+      "score": 0.9881381049167024,
+      "details": {
+        "axis": "columns",
+        "item_count": 85,
+        "scored_item_count": 85,
+        "row_intersection_count": 30146,
+        "column_intersection_count": 85,
+        "missing_requested_columns": []
+      },
+      "axis": "columns"
+    }
+  ]
+}

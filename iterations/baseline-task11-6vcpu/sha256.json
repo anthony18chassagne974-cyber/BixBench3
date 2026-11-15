@@ -1,0 +1,16 @@
+{
+  "artifact_grades/deseq2_significant_degs.json": "9a8c0a089311aa3775570ef4d02dc3e2b235c1c31b06008d4f9e6896052a2abf",
+  "artifact_grades/dna_damage_enrichment.json": "01e118a1416b6b4c524c82031833394aa54d4a4e110e89daeca644eb3a33c2ef",
+  "artifact_grades/hypergeometric_pathway_enrichment.json": "d11b5d46f78c6fd0577d3882486c4d86dc1c7b10579cefef71b237eca33ed1fb",
+  "artifact_grades/piano_preranked_gsea.json": "ee0b3b9fed63cf35703853389cecf7357e3093a9c35bf6b3c2054256296801df",
+  "artifact_grades/tempo_seq_filtered_counts.json": "76572163796983cddd8e4a8a3ae27bd79c8c24302a81a6e4de871a00053831bb",
+  "cleanup.json": "8a1faca1d91a38bd7eb21e3092bc140d372071cb4ffcba20d402ebb72269823c",
+  "grade.json": "1845ce1593c66900e6fae2710351409fc43989e9785e882bbd66bf4d9c399e5b",
+  "inspect.eval": "6a792da6f7685cf21fa5e9c965356af2bc37b52737fe3c50912e1693cb5eb3f9",
+  "inspect.json.gz": "0b855bd188d1fde0444c1da677a1d22827a2f2c63a97c35663ba7097ff88f4ae",
+  "judge.json": "27f4398e7a3156b637496d52fa80c9fcb474783d174597995cfe7bfa5cf20ee4",
+  "metrics.json": "fb2917a2f73538c01d8dfb84baf391bfb7123d3478dbaafab5983f580f4178f7",
+  "model-calls.csv": "b04effd6ff031d413bde7fbf7ae47c2b3ed1a28e8c842924762fa0f7490eba65",
+  "run_manifest.json": "dacb517ee054f61b6fb425167fd447c791a61783c8a8019b5b0bab2e1b837f8f",
+  "tool-trace.html": "107d511460d4f87bbf972ea708095950644355d599e88f2420a70721fb0385ab"
+}

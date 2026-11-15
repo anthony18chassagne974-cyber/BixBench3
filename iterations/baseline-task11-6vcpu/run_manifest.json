@@ -1,0 +1,103 @@
+{
+  "benchmark_version": "v1.0.0",
+  "cleanup": {
+    "action": "deleted",
+    "ongoing_disk_cost_warning": false,
+    "succeeded": true,
+    "vm_name": "arb-run-10-1016-j-crtox-2021-01-003-v1-d8ce4e12d7"
+  },
+  "completed_at": "2026-11-15T04:23:43.487302+00:00",
+  "detached_at": "2026-11-15T01:54:29.307025+00:00",
+  "effort": {
+    "requested": "max",
+    "resolved": "xhigh"
+  },
+  "follow_up_commands": {
+    "cancel": "uv run bixbench3 cancel --run 10-1016-j-crtox-2021-01-003-v1-openai-gpt-5-4-mini-20261115t015220480622z-d8ce4e12d7 --project bixbench3-task11-jex20",
+    "complete": "uv run bixbench3 complete --run 10-1016-j-crtox-2021-01-003-v1-openai-gpt-5-4-mini-20261115t015220480622z-d8ce4e12d7 --project bixbench3-task11-jex20",
+    "status": "uv run bixbench3 status --run 10-1016-j-crtox-2021-01-003-v1-openai-gpt-5-4-mini-20261115t015220480622z-d8ce4e12d7 --project bixbench3-task11-jex20"
+  },
+  "gcp": {
+    "boot_disk_gb": 200,
+    "boot_disk_type": "pd-balanced",
+    "data_disk": "arb-data-10-1016-j-crtox-2021-01-003-v1-6752392afead",
+    "data_disk_mode": "read-only",
+    "machine_type": "n2-custom-6-32768",
+    "project": "bixbench3-task11-jex20",
+    "vm_name": "arb-run-10-1016-j-crtox-2021-01-003-v1-d8ce4e12d7",
+    "zone": "us-central1-a"
+  },
+  "gcs_release": "v1.0.0",
+  "git_commit": null,
+  "ground_truth_manifest_sha256": "b13cfae0574dffa1bc90c5d27e36b609b900eac8587da08c1f1e7f4661653132",
+  "hf_case_files_sha256": {
+    "case.json": "2027a7b646628c33a545f9067b7e977bd06b56dea1a3ba31770d448a5aef0c32",
+    "cases/10.1016_j.crtox.2021.01.003_v1/agent/inputs_metadata.json": "e3cb8fa740d278401bc276aedff0225f8b92296648bd78d2f90c849de41e1eca",
+    "cases/10.1016_j.crtox.2021.01.003_v1/agent/prompt.md": "0c346d124895fcbb1a01ac90349ebf5492874cb50f436ba8f29fe356a7ba74ea",
+    "cases/10.1016_j.crtox.2021.01.003_v1/agent/task_body.json": "dfe32457b444965a3356ab0f6a9f1334b5ab3675b8eed66030b160283a053d62",
+    "cases/10.1016_j.crtox.2021.01.003_v1/runtime/runtime.json": "1007d1f4f347ad883d3f5dd6ae9b0781a5c2c14a21f1f2f4f3c0f5958bdcae0c"
+  },
+  "hf_dataset": "EdisonScientific/BixBench3",
+  "hf_revision": "v1.0.0",
+  "input_manifest_sha256": "6752392afeadb62621cfddc1a61b2c71d349e7d57c40f5ee291042f7b5e10aba",
+  "limits": {
+    "messages": 5000,
+    "time_seconds": 86400
+  },
+  "live_tracking": {
+    "condition": "baseline-6cpu-task11",
+    "description": "Task 11 full baseline; 6 vCPU 32 GB; same model prompt and pd-balanced disk as 8-vCPU baseline; live snapshots without partial grading",
+    "enabled": true,
+    "grade_every_seconds": 0
+  },
+  "model": {
+    "arguments": {},
+    "id": "openai/gpt-5.4-mini",
+    "reference_profile": true
+  },
+  "package_version": "1.0.0",
+  "paper_id": "10.1016_j.crtox.2021.01.003_v1",
+  "phase": "finalized",
+  "process_judge": {
+    "exit_status": 0,
+    "failure_modes": [
+      {
+        "evidence": "The required Ensembl 100 BioMart endpoint could not be used: request/access attempts show denial or HTTP 403 in messages 284, 288, 290, and 324. METHODS also states that the direct BioMart archive attempt was blocked by the proxy.",
+        "tag": "environment_setup_failure"
+      },
+      {
+        "evidence": "For pathway-related outputs, the required biomaRt/Ensembl orthology workflow was replaced with `babelgene` 22.9, as disclosed in METHODS and motivated by the BioMart failures. For counts, METHODS also describes a custom Rbowtie/Bowtie streaming pipeline rather than running QuasR 1.26.0 itself.",
+        "tag": "wrong_method_substitution"
+      }
+    ],
+    "max_tool_output_chars": 4000,
+    "max_trace_chars": 120000,
+    "model": "openai/gpt-5.5",
+    "prompt_sha256": "0972e209a26712cc3bf9272a30df6402c40be784a22233bae91eefd94e647dda",
+    "reasoning_effort": {
+      "requested": "max",
+      "resolved": "xhigh"
+    },
+    "report_path": "judge.json",
+    "required_environment_keys": [
+      "OPENAI_API_KEY"
+    ],
+    "score": 0.875,
+    "status": "ok",
+    "temperature": 0
+  },
+  "remote_completed_at": "2026-11-15T03:43:59.901492+00:00",
+  "remote_exit_status": 0,
+  "retention": {
+    "mode": "full_bundle",
+    "results_uri": "gs://bixbench3-task11-jex20-results/10.1016_j.crtox.2021.01.003_v1/openai-gpt-5-4-mini/20261115T015220480622Z"
+  },
+  "run_id": "10-1016-j-crtox-2021-01-003-v1-openai-gpt-5-4-mini-20261115t015220480622z-d8ce4e12d7",
+  "runtime_image_id": "3335244414214039050",
+  "runtime_image_name": "bixbench3-runtime-v1-0-0-r7-task11-no10x",
+  "schema_version": 1,
+  "started_at": "2026-11-15T01:52:23.496794+00:00",
+  "status": "succeeded",
+  "task_id": "11",
+  "updated_at": "2026-11-15T03:44:17.707372+00:00"
+}

@@ -1,0 +1,192 @@
+{
+  "paper_id": "10.1016_j.crtox.2021.01.003_v1",
+  "doi": "10.1016/j.crtox.2021.01.003",
+  "score": 0.6789777125145472,
+  "artifact_count": 5,
+  "artifacts": [
+    {
+      "artifact_id": "tempo_seq_filtered_counts",
+      "score": 0.9881381049167024,
+      "score_combination": "product",
+      "checks": [
+        {
+          "metric": "f1",
+          "score": 1.0,
+          "details": {
+            "expected_count": 30146,
+            "observed_count": 30146,
+            "true_positive": 30146,
+            "false_positive": 0,
+            "false_negative": 0,
+            "precision": 1.0,
+            "recall": 1.0
+          },
+          "axis": "rows"
+        },
+        {
+          "metric": "f1",
+          "score": 1.0,
+          "details": {
+            "expected_count": 85,
+            "observed_count": 85,
+            "true_positive": 85,
+            "false_positive": 0,
+            "false_negative": 0,
+            "precision": 1.0,
+            "recall": 1.0
+          },
+          "axis": "columns"
+        },
+        {
+          "metric": "ccc",
+          "score": 0.9881381049167024,
+          "details": {
+            "axis": "columns",
+            "item_count": 85,
+            "scored_item_count": 85,
+            "row_intersection_count": 30146,
+            "column_intersection_count": 85,
+            "missing_requested_columns": []
+          },
+          "axis": "columns"
+        }
+      ]
+    },
+    {
+      "artifact_id": "deseq2_significant_degs",
+      "score": 0.8951642534179167,
+      "score_combination": "product",
+      "checks": [
+        {
+          "metric": "f1",
+          "score": 0.895475271834444,
+          "details": {
+            "expected_count": 2862,
+            "observed_count": 2840,
+            "true_positive": 2553,
+            "false_positive": 287,
+            "false_negative": 309,
+            "precision": 0.898943661971831,
+            "recall": 0.8920335429769392
+          },
+          "axis": "rows"
+        },
+        {
+          "metric": "ccc",
+          "score": 0.9996526778278421,
+          "details": {
+            "axis": "columns",
+            "item_count": 2,
+            "scored_item_count": 2,
+            "row_intersection_count": 2553,
+            "column_intersection_count": 2,
+            "missing_requested_columns": []
+          },
+          "axis": "columns"
+        }
+      ]
+    },
+    {
+      "artifact_id": "piano_preranked_gsea",
+      "score": 0.5729581558404042,
+      "score_combination": "product",
+      "checks": [
+        {
+          "metric": "f1",
+          "score": 0.5748987854251012,
+          "details": {
+            "expected_count": 615,
+            "observed_count": 867,
+            "true_positive": 426,
+            "false_positive": 441,
+            "false_negative": 189,
+            "precision": 0.4913494809688581,
+            "recall": 0.6926829268292682
+          },
+          "axis": "rows"
+        },
+        {
+          "metric": "ccc",
+          "score": 0.9966243978350694,
+          "details": {
+            "axis": "columns",
+            "item_count": 1,
+            "scored_item_count": 1,
+            "row_intersection_count": 426,
+            "column_intersection_count": 1,
+            "missing_requested_columns": []
+          },
+          "axis": "columns"
+        }
+      ]
+    },
+    {
+      "artifact_id": "hypergeometric_pathway_enrichment",
+      "score": 0.1723186617329444,
+      "score_combination": "product",
+      "checks": [
+        {
+          "metric": "f1",
+          "score": 0.19759341355288157,
+          "details": {
+            "expected_count": 158,
+            "observed_count": 1421,
+            "true_positive": 156,
+            "false_positive": 1265,
+            "false_negative": 2,
+            "precision": 0.10978184377199156,
+            "recall": 0.9873417721518988
+          },
+          "axis": "rows"
+        },
+        {
+          "metric": "ccc",
+          "score": 0.872087073321536,
+          "details": {
+            "axis": "columns",
+            "item_count": 1,
+            "scored_item_count": 1,
+            "row_intersection_count": 156,
+            "column_intersection_count": 1,
+            "missing_requested_columns": []
+          },
+          "axis": "columns"
+        }
+      ]
+    },
+    {
+      "artifact_id": "dna_damage_enrichment",
+      "score": 0.7663093866647683,
+      "score_combination": "product",
+      "checks": [
+        {
+          "metric": "f1",
+          "score": 1.0,
+          "details": {
+            "expected_count": 1144,
+            "observed_count": 1144,
+            "true_positive": 1144,
+            "false_positive": 0,
+            "false_negative": 0,
+            "precision": 1.0,
+            "recall": 1.0
+          },
+          "axis": "rows"
+        },
+        {
+          "metric": "ccc",
+          "score": 0.7663093866647683,
+          "details": {
+            "axis": "columns",
+            "item_count": 6,
+            "scored_item_count": 6,
+            "row_intersection_count": 1144,
+            "column_intersection_count": 6,
+            "missing_requested_columns": []
+          },
+          "axis": "columns"
+        }
+      ]
+    }
+  ]
+}

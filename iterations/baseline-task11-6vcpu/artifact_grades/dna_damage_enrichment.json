@@ -1,0 +1,34 @@
+{
+  "artifact_id": "dna_damage_enrichment",
+  "score": 0.7663093866647683,
+  "score_combination": "product",
+  "checks": [
+    {
+      "metric": "f1",
+      "score": 1.0,
+      "details": {
+        "expected_count": 1144,
+        "observed_count": 1144,
+        "true_positive": 1144,
+        "false_positive": 0,
+        "false_negative": 0,
+        "precision": 1.0,
+        "recall": 1.0
+      },
+      "axis": "rows"
+    },
+    {
+      "metric": "ccc",
+      "score": 0.7663093866647683,
+      "details": {
+        "axis": "columns",
+        "item_count": 6,
+        "scored_item_count": 6,
+        "row_intersection_count": 1144,
+        "column_intersection_count": 6,
+        "missing_requested_columns": []
+      },
+      "axis": "columns"
+    }
+  ]
+}
