@@ -17,6 +17,15 @@
  *     everything else fails (ENETUNREACH for remote hosts, ECONNREFUSED for
  *     foreign loopback ports). Binds to the wildcard address are rewritten to
  *     loopback so nothing in the sandbox is reachable from the cluster network.
+ *   - signals (kill/tkill/tgkill/rt_sigqueueinfo/rt_tgsigqueueinfo/pidfd_open)
+ *     are trapped too: without a PID namespace the sandbox can see the host
+ *     processes of the run (Inspect, gateway, collector), which run as the same
+ *     user, and a `pkill python` would kill the evaluation. A signal to a
+ *     process outside the container fails with ESRCH, as if it did not exist
+ *     (what Docker's PID namespace gives); process-group and kill(-1) signals
+ *     are delivered only to container processes. Apptainer's own helpers
+ *     (starter, appinit, squashfuse, fuse-overlayfs) and bb3jail are never
+ *     signalled by group/broadcast kills.
  *
  * This works for static binaries (micromamba, Go tools) too, since it acts on
  * syscalls rather than libc. If the tracer dies, PTRACE_O_EXITKILL kills the
@@ -82,7 +91,12 @@
 #define __WALL 0x40000000
 #endif
 
+#ifndef __NR_pidfd_open
+#define __NR_pidfd_open 434
+#endif
+
 #define JAIL_TAG 0xB3
+#define HANDLED (-1) /* decide(): syscall emulated by the tracer, return 0 to the caller */
 #define X32_BIT 0x40000000
 
 static int proxy_port = -1;
@@ -100,22 +114,28 @@ static int install_filter(void) {
         /*  3 */ BPF_STMT(BPF_LD | BPF_W | BPF_ABS, offsetof(struct seccomp_data, nr)),
         /*  4 */ BPF_JUMP(BPF_JMP | BPF_JGE | BPF_K, X32_BIT, 0, 1),
         /*  5 */ BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_KILL),
-        /*  6 */ BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, __NR_connect, 7, 0),           /* -> 14 */
-        /*  7 */ BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, __NR_bind, 6, 0),              /* -> 14 */
-        /*  8 */ BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, __NR_sendmsg, 5, 0),           /* -> 14 */
-        /*  9 */ BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, __NR_sendmmsg, 4, 0),          /* -> 14 */
-        /* 10 */ BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, __NR_sendto, 4, 0),            /* -> 15 */
-        /* 11 */ BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, __NR_ptrace, 8, 0),            /* -> 20 */
-        /* 12 */ BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, __NR_process_vm_writev, 7, 0), /* -> 20 */
-        /* 13 */ BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, __NR_process_vm_readv, 6, 7),  /* -> 20 / 21 */
-        /* 14 */ BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_TRACE | JAIL_TAG),
-        /* 15 */ BPF_STMT(BPF_LD | BPF_W | BPF_ABS, offsetof(struct seccomp_data, args[4])),
-        /* 16 */ BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, 0, 0, 2),                      /* -> 17 / 19 */
-        /* 17 */ BPF_STMT(BPF_LD | BPF_W | BPF_ABS, offsetof(struct seccomp_data, args[4]) + 4),
-        /* 18 */ BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, 0, 2, 0),                      /* -> 21 / 19 */
-        /* 19 */ BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_TRACE | JAIL_TAG),
-        /* 20 */ BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ERRNO | EPERM),
-        /* 21 */ BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
+        /*  6 */ BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, __NR_connect, 13, 0),            /* -> 20 */
+        /*  7 */ BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, __NR_bind, 12, 0),               /* -> 20 */
+        /*  8 */ BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, __NR_sendmsg, 11, 0),            /* -> 20 */
+        /*  9 */ BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, __NR_sendmmsg, 10, 0),           /* -> 20 */
+        /* 10 */ BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, __NR_kill, 9, 0),                /* -> 20 */
+        /* 11 */ BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, __NR_tkill, 8, 0),               /* -> 20 */
+        /* 12 */ BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, __NR_tgkill, 7, 0),              /* -> 20 */
+        /* 13 */ BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, __NR_rt_sigqueueinfo, 6, 0),     /* -> 20 */
+        /* 14 */ BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, __NR_rt_tgsigqueueinfo, 5, 0),   /* -> 20 */
+        /* 15 */ BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, __NR_pidfd_open, 4, 0),          /* -> 20 */
+        /* 16 */ BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, __NR_sendto, 4, 0),              /* -> 21 */
+        /* 17 */ BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, __NR_ptrace, 8, 0),              /* -> 26 */
+        /* 18 */ BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, __NR_process_vm_writev, 7, 0),   /* -> 26 */
+        /* 19 */ BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, __NR_process_vm_readv, 6, 7),    /* -> 26 / 27 */
+        /* 20 */ BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_TRACE | JAIL_TAG),
+        /* 21 */ BPF_STMT(BPF_LD | BPF_W | BPF_ABS, offsetof(struct seccomp_data, args[4])),
+        /* 22 */ BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, 0, 0, 2),                        /* -> 23 / 25 */
+        /* 23 */ BPF_STMT(BPF_LD | BPF_W | BPF_ABS, offsetof(struct seccomp_data, args[4]) + 4),
+        /* 24 */ BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, 0, 2, 0),                        /* -> 27 / 25 */
+        /* 25 */ BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_TRACE | JAIL_TAG),
+        /* 26 */ BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ERRNO | EPERM),
+        /* 27 */ BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
     };
     struct sock_fprog prog = {.len = (unsigned short)(sizeof f / sizeof f[0]), .filter = f};
     if (prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) != 0) return -1;
@@ -343,8 +363,141 @@ static int decide_msghdr(pid_t pid, unsigned long msg_addr, const char *call) {
     return decide_addr(pid, (unsigned long)m.msg_name, m.msg_namelen, 0, call);
 }
 
+/* ------------------------------------------------------------------ signals */
+static int in_container(long pid) {
+    char buf[24];
+    if (pid <= 0) return 0;
+    snprintf(buf, sizeof buf, "%ld", pid);
+    return same_container(buf);
+}
+
+/* Apptainer plumbing and the jail itself: never hit by group/broadcast signals. */
+static int protected_proc(long pid) {
+    static const char *names[] = {"starter", "starter-suid", "appinit", "squashfuse", "squashfuse_ll",
+                                  "fuse-overlayfs", "fuse2fs", "bb3jail", NULL};
+    char path[64], comm[64] = "";
+    snprintf(path, sizeof path, "/proc/%ld/comm", pid);
+    FILE *fp = fopen(path, "r");
+    if (!fp) return 0;
+    if (fgets(comm, sizeof comm, fp)) comm[strcspn(comm, "\n")] = 0;
+    fclose(fp);
+    for (int i = 0; names[i]; i++)
+        if (!strcmp(comm, names[i])) return 1;
+    return 0;
+}
+
+static long proc_field(long pid, const char *file, const char *key) {
+    char path[64], line[256];
+    snprintf(path, sizeof path, "/proc/%ld/%s", pid, file);
+    FILE *fp = fopen(path, "r");
+    if (!fp) return -1;
+    long value = -1;
+    size_t klen = strlen(key);
+    while (fgets(line, sizeof line, fp))
+        if (!strncmp(line, key, klen)) { value = strtol(line + klen, NULL, 10); break; }
+    fclose(fp);
+    return value;
+}
+
+/* Process state letter from /proc/<pid>/stat ('Z' = zombie; 0 if gone). */
+static char proc_state(long pid) {
+    char path[64], buf[512];
+    snprintf(path, sizeof path, "/proc/%ld/stat", pid);
+    FILE *fp = fopen(path, "r");
+    if (!fp) return 0;
+    size_t n = fread(buf, 1, sizeof buf - 1, fp);
+    fclose(fp);
+    buf[n] = 0;
+    char *p = strrchr(buf, ')');
+    char state = 0;
+    if (!p || sscanf(p + 1, " %c", &state) != 1) return 0;
+    return state;
+}
+
+static long proc_pgid(long pid) {
+    char path[64], buf[512];
+    snprintf(path, sizeof path, "/proc/%ld/stat", pid);
+    FILE *fp = fopen(path, "r");
+    if (!fp) return -1;
+    size_t n = fread(buf, 1, sizeof buf - 1, fp);
+    fclose(fp);
+    buf[n] = 0;
+    char *p = strrchr(buf, ')'); /* comm may contain spaces */
+    long ppid, pgid;
+    char state;
+    if (!p || sscanf(p + 1, " %c %ld %ld", &state, &ppid, &pgid) != 3) return -1;
+    return pgid;
+}
+
+/*
+ * May a single pid be signalled? Yes if it is a container process, a zombie, or gone (the
+ * kernel then answers ESRCH itself). Host processes are hidden from the sandbox (/proc is
+ * mounted hidepid=2 in the fakeroot user namespace) but still signallable by pid: a pid
+ * that exists without being a visible container process is refused.
+ */
+static int target_allowed(long pid) {
+    if (in_container(pid)) return 1;
+    if (proc_state(pid) == 'Z') return 1;
+    return kill((pid_t)pid, 0) != 0 && errno == ESRCH;
+}
+
+/*
+ * kill(pid, sig) semantics restricted to the container. Returns 0 to let the kernel run
+ * the call unchanged, HANDLED when the tracer delivered it itself, or a positive errno.
+ */
+static int decide_kill(pid_t caller, long target, int sig, const char *call) {
+    char detail[160];
+    if (target > 0) {
+        if (target_allowed(target)) return 0;
+        snprintf(detail, sizeof detail, "%s pid %ld sig %d (process outside the sandbox)", call, target, sig);
+        jlog(caller, "deny", detail);
+        return ESRCH;
+    }
+    /*
+     * Process-group and broadcast signals are always delivered by the tracer, one by one, to
+     * the visible container processes: a host process in the same group (e.g. the host-side
+     * `apptainer exec` client) would be invisible here, so the native call is never safe.
+     */
+    long caller_tgid = proc_field(caller, "status", "Tgid:");
+    long pgid = target == 0 ? proc_pgid(caller) : -target; /* target == -1: broadcast */
+    if (target != -1 && pgid <= 0) return ESRCH;
+    int delivered = 0, n = 0;
+    DIR *proc = opendir("/proc");
+    if (!proc) return EPERM;
+    struct dirent *d;
+    while ((d = readdir(proc))) {
+        if (!isdigit((unsigned char)d->d_name[0])) continue;
+        long p = strtol(d->d_name, NULL, 10);
+        if (target == -1 ? (p == 1 || p == caller_tgid || p == getpid()) : proc_pgid(p) != pgid) continue;
+        if (!in_container(p) || protected_proc(p)) continue;
+        n++;
+        if (sig == 0 || kill((pid_t)p, sig) == 0) delivered = 1;
+    }
+    closedir(proc);
+    if (target == -1) {
+        snprintf(detail, sizeof detail, "%s -1 sig %d: delivered to %d container process(es) only", call, sig, n);
+        jlog(caller, "limit", detail);
+    }
+    return delivered ? HANDLED : ESRCH;
+}
+
+static int decide_thread(pid_t caller, long tgid_or_tid, int sig, const char *call) {
+    if (tgid_or_tid > 0 && target_allowed(tgid_or_tid)) return 0;
+    char detail[160];
+    snprintf(detail, sizeof detail, "%s %ld sig %d (process outside the sandbox)", call, tgid_or_tid, sig);
+    jlog(caller, "deny", detail);
+    return tgid_or_tid > 0 ? ESRCH : EINVAL;
+}
+
 static int decide(pid_t pid, struct user_regs_struct *r) {
     long nr = (long)r->orig_rax;
+    /* pid arguments are pid_t (int): sign-extend the low 32 bits */
+    if (nr == __NR_kill) return decide_kill(pid, (long)(int)r->rdi, (int)r->rsi, "kill");
+    if (nr == __NR_rt_sigqueueinfo) return decide_kill(pid, (long)(int)r->rdi, (int)r->rsi, "rt_sigqueueinfo");
+    if (nr == __NR_tkill) return decide_thread(pid, (long)(int)r->rdi, (int)r->rsi, "tkill");
+    if (nr == __NR_tgkill) return decide_thread(pid, (long)(int)r->rdi, (int)r->rdx, "tgkill");
+    if (nr == __NR_rt_tgsigqueueinfo) return decide_thread(pid, (long)(int)r->rdi, (int)r->rdx, "rt_tgsigqueueinfo");
+    if (nr == __NR_pidfd_open) return decide_thread(pid, (long)(int)r->rdi, 0, "pidfd_open");
     if (nr == __NR_connect) return decide_addr(pid, r->rsi, r->rdx, 0, "connect");
     if (nr == __NR_bind) return decide_addr(pid, r->rsi, r->rdx, 1, "bind");
     if (nr == __NR_sendto) return decide_addr(pid, r->r8, r->r9, 0, "sendto");
@@ -386,7 +539,7 @@ static int trace_loop(void) {
                 int e = decide(pid, &r);
                 if (e) {
                     r.orig_rax = (unsigned long long)-1; /* skip the syscall */
-                    r.rax = (unsigned long long)(-(long long)e);
+                    r.rax = e == HANDLED ? 0 : (unsigned long long)(-(long long)e);
                     ptrace(PTRACE_SETREGS, pid, 0, &r);
                 }
             }

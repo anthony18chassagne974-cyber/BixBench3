@@ -100,8 +100,14 @@ open(sys.argv[2], "w", encoding="utf-8").write(patched)
 PY
 [ $? -eq 0 ] || exit 2
 printf '127.0.0.1 localhost\n127.0.0.1 network-gateway\n::1 localhost\n' > "$JOB/hosts"
+# apt under `apptainer --fakeroot` (root-mapped user namespace, no /etc/subuid): apt cannot drop to
+# its _apt user (setgroups fails) and the image's archives/partial dir belongs to _apt (unmapped, so
+# root cannot write it). In the GCP Docker sandbox apt works as root; these two settings restore that.
+printf 'APT::Sandbox::User "root";\nDir::Cache::Archives "/var/cache/apt/sherlock-archives/";\n' > "$JOB/apt-sherlock.conf"
 NCPU=$(python3 "$REPO/sherlock/cpu_view.py" "$JOB/cpuinfo" "$JOB/cpu_online")
 echo "[sherlock] sandbox CPU view: $NCPU CPUs"
+NMEM=$(python3 "$REPO/sherlock/mem_view.py" "$JOB/meminfo") || exit 2
+echo "[sherlock] sandbox memory view: $NMEM GB; CPU: $(grep -m1 'model name' /proc/cpuinfo | cut -d: -f2)"
 
 # --- sandbox provider config (mirrors the compose `default` service)
 python3 - "$JOB/sandbox.json" <<PY
@@ -111,7 +117,8 @@ cfg = {
     "sif": "$JOB/bixbench3-sandbox_1.0.0.sif",
     "overlay_dir": "$JOB/overlay",
     "binds": [["$DATA_DIR", "/data", "ro"], ["$RUN_ROOT/workspace", "/workspace", "rw"], ["$RUN_ROOT/outputs", "/outputs", "rw"],
-              ["$JOB/cpuinfo", "/proc/cpuinfo", "ro"], ["$JOB/cpu_online", "/sys/devices/system/cpu/online", "ro"]],
+              ["$JOB/cpuinfo", "/proc/cpuinfo", "ro"], ["$JOB/cpu_online", "/sys/devices/system/cpu/online", "ro"], ["$JOB/meminfo", "/proc/meminfo", "ro"],
+              ["$JOB/apt-sherlock.conf", "/etc/apt/apt.conf.d/99-sherlock-fakeroot", "ro"]],
     "jail_dir": "$JOB/jaildir",
     "jail_log_dir": "$JOB/jaillog",
     "proxy_port": $SQUID_PORT,
@@ -160,7 +167,9 @@ p = sys.argv[1]
 m = json.load(open(p))
 m["platform"].update({"slurm_job_id": os.environ.get("SLURM_JOB_ID"), "node": os.uname().nodename,
                       "partition": os.environ.get("SLURM_JOB_PARTITION"), "cpus": int(os.environ.get("SLURM_CPUS_PER_TASK", "6")),
-                      "memory_mb": int(os.environ.get("SLURM_MEM_PER_NODE", "0") or 0)})
+                      "memory_mb": int(os.environ.get("SLURM_MEM_PER_NODE", "0") or 0),
+                      "cpu_model": next((l.split(":", 1)[1].strip() for l in open("/proc/cpuinfo") if l.startswith("model name")), None),
+                      "slurm_constraint": os.environ.get("SLURM_JOB_CONSTRAINTS") or None})
 json.dump(m, open(p, "w"), indent=2, sort_keys=True)
 PY
 
@@ -203,17 +212,44 @@ COLLECT="python3 $REPO/tools/bixdash/vm/collect.py --grade-every 0"
 ( while true; do sleep 60; $COLLECT >> "$JOB/collector.log" 2>&1; sleep 240; done ) &
 COLLECTOR=$!
 
-# --- scancel / time limit: publish a final "cancelled" dashboard snapshot before exiting
+# --- keep a copy on scratch ($L_SCRATCH_JOB is purged at job end; the GCS upload in run.sh is the durable record)
+DEST=$SCRATCH/bixbench3/runs/$RUN_ID
+keep_copy() {  # keep_copy [quick]: quick = local copy only (must fit in Slurm's 30 s KillWait)
+  mkdir -p "$DEST/sherlock"
+  rsync -a --exclude workspace "$RUN_ROOT/" "$DEST/"
+  cp -a "$JOB/gateway.log" "$JOB/collector.log" "$JOB/hostexec.log" "$JOB/sandbox.json" "$JOB/supervisor.py" "$DEST/sherlock/" 2>/dev/null
+  cp -a "$JOB/jaillog" "$JOB/squidlog" "$JOB/bixdash" "$DEST/sherlock/" 2>/dev/null
+  cp -a "$XDG_DATA_HOME/inspect_ai/samplebuffer" "$DEST/sherlock/" 2>/dev/null
+  echo "[sherlock] results kept in $DEST"
+  [ "${1:-}" = quick ] && return 0
+  local results_uri f
+  results_uri=$(field results_uri)
+  for f in "$JOB/jaillog/jail.log" "$JOB/squidlog/access.log"; do
+    [ -s "$f" ] && timeout 60 gcloud storage cp --no-clobber "$f" "$results_uri/sherlock/$(basename "$(dirname "$f")")-$(basename "$f")" >/dev/null 2>&1
+  done
+}
+
+# --- scancel / time limit: publish a final "cancelled" dashboard snapshot before exiting.
+# Slurm sends SIGTERM and SIGKILLs 30 s later (KillWait); bash runs a trap only between
+# foreground commands, so the run is started in the background and awaited with `wait`.
+RUNPID=""
 on_term() {
+  trap - TERM INT
   echo "[sherlock] job cancelled or timed out"
   kill "$COLLECTOR" 2>/dev/null; COLLECTOR=""
+  # run.sh's own EXIT trap also writes status.json (as "completed" when interrupted): let it finish first
+  if [ -n "$RUNPID" ]; then
+    kill -TERM "$RUNPID" 2>/dev/null
+    for _ in $(seq 16); do kill -0 "$RUNPID" 2>/dev/null || break; sleep 0.5; done
+  fi
   python3 - "$RUN_ROOT/status.json" <<'PY'
 import json, sys
 from datetime import UTC, datetime
 json.dump({"phase": "cancelled", "status": "failed", "updated_at": datetime.now(UTC).isoformat(),
            "remote_exit_status": 143, "systemd_unit": "slurm"}, open(sys.argv[1], "w"), indent=2)
 PY
-  timeout 25 $COLLECT >> "$JOB/collector.log" 2>&1
+  keep_copy quick
+  timeout 12 $COLLECT >> "$JOB/collector.log" 2>&1
   exit 143
 }
 trap on_term TERM INT
@@ -222,21 +258,13 @@ trap on_term TERM INT
 apptainer exec --cleanenv --env-file "$JOB/runner.env" --pwd "$SRC" \
   --bind "$JOB" --bind "$SECRETS" --bind "$BB3" --bind "$DATA_DIR:$DATA_DIR:ro" \
   --bind "$(dirname "$(readlink -f "$(command -v uv)")"):/opt/uvbin:ro" --bind "$SCRATCH/bixbench3/cache/uv" \
-  "$RUNNER" bash "$RUN_ROOT/run.sh"
+  "$RUNNER" bash "$RUN_ROOT/run.sh" &
+RUNPID=$!
+wait "$RUNPID"
 rc=$?
 echo "[sherlock] run.sh exited with $rc"
 kill "$COLLECTOR" 2>/dev/null; COLLECTOR=""
 $COLLECT >> "$JOB/collector.log" 2>&1
 
-# --- keep a copy on scratch (the GCS upload in run.sh is the durable record)
-DEST=$SCRATCH/bixbench3/runs/$RUN_ID
-mkdir -p "$DEST/sherlock"
-rsync -a --exclude workspace "$RUN_ROOT/" "$DEST/"
-cp -a "$JOB/gateway.log" "$JOB/collector.log" "$JOB/hostexec.log" "$JOB/sandbox.json" "$JOB/supervisor.py" "$DEST/sherlock/" 2>/dev/null
-cp -a "$JOB/jaillog" "$JOB/squidlog" "$JOB/bixdash" "$DEST/sherlock/" 2>/dev/null
-RESULTS_URI=$(field results_uri)
-for f in "$JOB/jaillog/jail.log" "$JOB/squidlog/access.log"; do
-  [ -s "$f" ] && gcloud storage cp --no-clobber "$f" "$RESULTS_URI/sherlock/$(basename "$(dirname "$f")")-$(basename "$f")" >/dev/null 2>&1
-done
-echo "[sherlock] results kept in $DEST"
+keep_copy
 exit $rc

@@ -11,10 +11,11 @@ python3 -m http.server "$HP" --bind 127.0.0.1 --directory "$W" >/dev/null 2>&1 &
 mkdir -p "$W/overlay" "$W/jaildir" "$W/log" "$W/wd"
 cp "$JAIL" "$W/jaildir/bb3jail"
 printf '127.0.0.1 localhost\n127.0.0.1 network-gateway\n::1 localhost\n' > "$W/hosts"
+printf 'APT::Sandbox::User "root";\nDir::Cache::Archives "/var/cache/apt/sherlock-archives/";\n' > "$W/apt.conf"  # as run_job.sbatch
 NAME=bb3test-$$
 apptainer instance start --containall --cleanenv --fakeroot --ignore-fakeroot-command \
   --overlay "$W/overlay" --workdir "$W/wd" --bind "$W/jaildir:/opt/bb3jail:ro" --bind "$W/log:/opt/bb3jail-log" \
-  --bind "$W/hosts:/etc/hosts:ro" "$SIF" "$NAME" || { echo "FAIL instance start"; exit 1; }
+  --bind "$W/hosts:/etc/hosts:ro" --bind "$W/apt.conf:/etc/apt/apt.conf.d/99-sherlock-fakeroot:ro" "$SIF" "$NAME" || { echo "FAIL instance start"; exit 1; }
 sleep 2
 J() { apptainer exec --cleanenv --pwd /tmp "instance://$NAME" /opt/bb3jail/bb3jail --proxy-port "$PP" --log /opt/bb3jail-log/jail.log -- "$@"; }
 PASS=0; FAIL=0
@@ -55,6 +56,32 @@ tp=$(apptainer exec "instance://$NAME" sh -c 'for p in $(pgrep -x sleep); do gre
 check "daemon stays traced" 1 $([ -n "$tp" ] && [ "$tp" != "TracerPid:0" ] && echo 1 || echo 0)
 J pip download -q --no-deps --proxy "http://network-gateway:$PP" six -d /tmp/pipdl >/dev/null 2>&1; check "pip via proxy" 0 $?
 code=$(J Rscript -e "Sys.setenv(https_proxy='http://network-gateway:$PP'); x <- tryCatch(readLines(url('https://cloud.r-project.org/src/contrib/PACKAGES'), n=1), error=function(e) 'ERR'); cat(ifelse(x=='ERR','ERR','OK'))" 2>/dev/null); check "R via proxy" OK "$code"
+out=$(J apt-get -o Acquire::http::Timeout=10 -o Acquire::Retries=0 update 2>&1); case "$out" in *"Failed to fetch"*|*"Temporary failure"*|*"Could not"*) out=blocked;; esac; check "apt without proxy fails" blocked "$out"
+J env http_proxy="http://network-gateway:$PP" sh -c 'DEBIAN_FRONTEND=noninteractive apt-get update -q && apt-get install -y -q --no-install-recommends libuv1-dev' >/dev/null 2>&1; check "apt-get install via proxy (fakeroot apt config)" 0 $?
+# signals: no PID namespace -> host processes (hidden by hidepid) can still be signalled by pid; the jail refuses it
+setsid sleep 3017 & HOSTSLEEP=$!; sleep 0.3; HOSTSLEEP=$(pgrep -n -f "sleep 3017")
+out=$(J python3 -c "import os,errno
+try: os.kill($HOSTSLEEP, 15); print('delivered')
+except OSError as e: print(errno.errorcode.get(e.errno))" 2>&1); check "kill of a host process -> ESRCH" ESRCH "$out"
+J pkill -f "sleep 3017" >/dev/null 2>&1; J kill -9 $HOSTSLEEP >/dev/null 2>&1; sleep 1
+check "pkill/kill cannot reach host processes" 1 $(kill -0 $HOSTSLEEP 2>/dev/null && echo 1 || echo 0)
+out=$(J bash -c 'sleep 100 & p=$!; kill $p; wait $p; echo $?' 2>&1); check "kill of a sandbox process works" 143 "$out"
+J timeout 2 sleep 30 >/dev/null 2>&1; check "timeout (process-group kill) works" 124 $?
+out=$(J bash -c 'sleep 200 & p=$!; kill -9 -1; wait $p 2>/dev/null; kill -0 $p 2>/dev/null && echo survived || echo killed' 2>/dev/null | tail -1); check "kill -1 reaches sandbox processes" killed "$out"
+check "kill -1 spares host processes" 1 $(kill -0 $HOSTSLEEP 2>/dev/null && echo 1 || echo 0)
+J true; check "instance still works after kill -1" 0 $?
+out=$(J python3 -c "import subprocess,os,time
+p=subprocess.Popen(['true']); time.sleep(0.5); os.kill(p.pid,0); print('zombie_ok')" 2>&1); check "kill -0 on an unreaped sandbox child succeeds (kernel semantics)" zombie_ok "$out"
+out=$(J python3 -c "import os,errno
+try: os.kill(-$HOSTSLEEP, 0); print('reached')
+except OSError as e: print(errno.errorcode.get(e.errno))" 2>&1); check "group kill of a host process group -> ESRCH" ESRCH "$out"
+sleep 3019 & SAMEGRP=$!   # host process in the same process group as the `apptainer exec` client
+trap 'echo "FAIL kill 0 from the sandbox reached this host script"; FAIL=$((FAIL+1))' TERM
+J bash -c 'kill -TERM 0' >/dev/null 2>&1
+trap - TERM
+check "kill 0 from the sandbox spares host processes of the same group" 1 $(kill -0 $SAMEGRP 2>/dev/null && echo 1 || echo 0)
+kill $SAMEGRP 2>/dev/null
+kill $HOSTSLEEP 2>/dev/null
 echo "--- jail log"; tail -5 "$W/log/jail.log"
 apptainer instance stop "$NAME" >/dev/null 2>&1
 kill $PROXY $HOSTSRV 2>/dev/null
