@@ -36,3 +36,12 @@ def test_shared_auth_rejects_missing_or_wrong_tokens(server, tmp_path):
     assert request._authorized({'token': ['correct-token']})
     request.headers = {'Cookie': 'bixdash=correct-token'}
     assert request._authorized({})
+
+
+def test_public_mode_is_explicit_and_needs_no_token(server, tmp_path):
+    with patch.dict('os.environ', {'K_SERVICE': 'bixdash', 'BIXDASH_PUBLIC': '1', 'BIXDASH_TOKEN': ''}), patch('sys.argv', ['server.py', '--source', str(tmp_path)]), patch.object(server, 'ThreadingHTTPServer') as http:
+        server.main()
+    handler = http.call_args.args[1]
+    request = object.__new__(handler)
+    request.headers = {}
+    assert request._authorized({})

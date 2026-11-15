@@ -140,8 +140,9 @@ def main():
     ap.add_argument("--host", default="0.0.0.0" if os.environ.get("K_SERVICE") else "127.0.0.1")
     ap.add_argument("--port", type=int, default=int(os.environ.get("PORT", "8050")))
     args = ap.parse_args()
-    token = os.environ.get("BIXDASH_TOKEN") or None
-    if os.environ.get("K_SERVICE") and not token:
+    public = os.environ.get("BIXDASH_PUBLIC") == "1"
+    token = None if public else (os.environ.get("BIXDASH_TOKEN") or None)
+    if os.environ.get("K_SERVICE") and not token and not public:
         raise RuntimeError("BIXDASH_TOKEN is required on Cloud Run")
     server = ThreadingHTTPServer((args.host, args.port), make_handler(Source(args.source), token))
     print(f"bixdash on http://{args.host}:{args.port}  (source={args.source}, token={'on' if token else 'off'})")

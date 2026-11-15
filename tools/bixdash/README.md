@@ -158,5 +158,5 @@ and follows the runner's existing submission-failure cleanup behavior.
 ## Shared Cloud Run deployment
 
 The team dashboard has moved to Cloud Run; the old `bixdash-web` VM is stopped.
-See [TEAM_SETUP.md](../../TEAM_SETUP.md) for the URL, authenticated access,
+See [TEAM_SETUP.md](../../TEAM_SETUP.md) for the URL, public/protected access modes,
 container/deployment instructions and shared 6-vCPU experiment profile.
