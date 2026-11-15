@@ -6,6 +6,8 @@ compute nodes through Slurm.
 
 ## What is identical to GCP, what differs
 
+Resources: set per run with `BB3_CPUS` / `BB3_MEM_GB` (current team experiments: **3 CPU / 16 GB**; the GCP profile was 6 vCPU / 32 GB).
+
 Identical: the agent sandbox image (`bixbench3-sandbox:1.0.0`, converted to a SIF), the gateway
 image (`bixbench3-network-gateway:1.0.0`), the network policy, the host-side Python environment
 (exact `uv.lock`, Python 3.12), model / effort / limits, prompt and SHA-verified v1.0.0 inputs,
