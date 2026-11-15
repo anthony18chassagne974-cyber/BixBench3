@@ -2,7 +2,7 @@
 
 Shared team setup: **[6 vCPU + live dashboard](TEAM_SETUP.md)**.
 
-Sherlock runs (this branch): **[Slurm + Apptainer, 3 CPU / 16 GB per run, same pipeline and dashboard](sherlock/README.md)**. The 6 vCPU setup above is the original GCP setup.
+Sherlock runs (this branch): **[Slurm + Apptainer, 6 CPU / 32 GB per run (the GCP VM shape) on AMD EPYC 7502 nodes, same pipeline and dashboard](sherlock/README.md)**. The 6 vCPU setup above is the original GCP setup.
 
 Run records: [iterations](iterations/). Adapted task 11 setup: [ADAPTED_RUNNER.md](ADAPTED_RUNNER.md).
 
