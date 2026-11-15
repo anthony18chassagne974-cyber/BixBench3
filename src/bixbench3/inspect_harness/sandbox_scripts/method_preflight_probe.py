@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import shutil
 import subprocess
 import urllib.error
@@ -21,6 +22,7 @@ from pathlib import Path
 
 R_TIMEOUT_SECONDS = 180
 NETWORK_TIMEOUT_SECONDS = 25
+COMMAND_TIMEOUT_SECONDS = 60
 
 OK = "OK"
 MISSING = "MISSING"
@@ -91,11 +93,22 @@ def probe_commands(commands: list[dict]) -> list[dict]:
     rows = []
     for command in commands:
         path = shutil.which(str(command["name"]))
-        rows.append({
-            **command,
-            "status": OK if path else MISSING,
-            "detail": path or "not on PATH",
-        })
+        required = command.get("required_version")
+        found = None
+        if not path:
+            state, detail = MISSING, "not on PATH"
+        elif not command.get("version_args"):
+            state, detail = OK, path
+        else:
+            _, output = run([path, *command["version_args"]], COMMAND_TIMEOUT_SECONDS)
+            match = re.search(str(command.get("version_regex") or r"(\d+(?:\.\d+)+)"), output)
+            found = match.group(1) if match else None
+            if required and found != required:
+                state = VERSION_MISMATCH
+                detail = f"{path}: found {found or 'unknown version'}, guidance names {required}"
+            else:
+                state, detail = OK, f"{path} ({found or 'version not reported'})"
+        rows.append({**command, "found_version": found, "status": state, "detail": detail})
     return rows
 
 
@@ -198,8 +211,9 @@ def render(spec: dict, runtime: dict, packages: list[dict], commands: list[dict]
                  if p["status"] != OK and not p.get("optional")]
     if commands:
         lines += ["", "## Command-line tools", ""]
-        lines += table(["Tool", "Used for", "Status", "Detail"],
-                       [[f"`{c['name']}`", c.get("purpose"), f"**{c['status']}**", c["detail"]] for c in commands])
+        lines += table(["Tool", "Used for", "Guidance version", "Status", "Detail"],
+                       [[f"`{c['name']}`", c.get("purpose"), c.get("required_version"), f"**{c['status']}**", c["detail"]]
+                        for c in commands])
         problems += [f"tool {c['name']} ({c['status']})" for c in commands
                      if c["status"] != OK and not c.get("optional")]
     lines += ["", "## External resources (probed through the sandbox proxy)", ""]

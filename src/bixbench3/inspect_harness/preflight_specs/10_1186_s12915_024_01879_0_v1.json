@@ -1,0 +1,34 @@
+{
+  "source": "Transcribed by hand from the Method Guidance section of the task 9 agent prompt. No grader output, reference artifact or ground truth was used.",
+  "r_runtime": {
+    "required": "R with DESeq2 v1.30.1 and clusterProfiler v3.18.1"
+  },
+  "r_packages": [
+    {"name": "DESeq2", "required_version": "1.30.1", "purpose": "clone-versus-control differential expression"},
+    {"name": "clusterProfiler", "required_version": "3.18.1", "purpose": "GO biological-process over-representation"},
+    {"name": "org.Hs.eg.db", "required_version": null, "purpose": "human annotation for GO enrichment; no version named by the guidance"}
+  ],
+  "commands": [
+    {"name": "fastqc", "purpose": "raw-read quality assessment", "version_args": ["--version"], "required_version": null},
+    {"name": "perl", "purpose": "runs tagseq_clipper.pl from the tag-based_RNAseq pipeline", "version_args": ["-e", "print $^V"], "required_version": null},
+    {"name": "cutadapt", "purpose": "poly-A and adapter trimming", "version_args": ["--version"], "required_version": null},
+    {"name": "hisat2", "purpose": "alignment to GRCh38", "version_args": ["--version"], "version_regex": "version (\\d+(?:\\.\\d+)+)", "required_version": "2.2.1"},
+    {"name": "hisat2-build", "purpose": "HISAT2 index construction", "required_version": null},
+    {"name": "samtools", "purpose": "sorting and indexing alignments (as needed)", "version_args": ["--version"], "required_version": null, "optional": true},
+    {"name": "featureCounts", "purpose": "gene-level counting with the GENCODE v38 GTF", "version_args": ["-v"], "version_regex": "v(\\d+(?:\\.\\d+)+)", "required_version": "2.0.1"}
+  ],
+  "network": [
+    {"name": "tag-based_RNAseq pipeline (tagseq_clipper.pl)", "url": "https://github.com/z0on/tag-based_RNAseq", "purpose": "Tag-Seq leader clipping and PCR-duplicate removal named by the guidance"},
+    {"name": "Bioconductor", "url": "https://bioconductor.org/config.yaml", "purpose": "BiocManager package installation"},
+    {"name": "CRAN", "url": "https://cloud.r-project.org/", "purpose": "R package installation"},
+    {"name": "Bioconda channel", "url": "https://conda.anaconda.org/bioconda/noarch/repodata.json.bz2", "purpose": "conda installation of command-line tools"},
+    {"name": "STRING v12", "url": "https://string-db.org/", "optional": true, "purpose": "protein-interaction interpretation only; not needed for the required tables"}
+  ],
+  "staged_inputs": [
+    {"path": "data/raw/PRJNA983731", "glob": "*.fastq.gz", "expected_count": 28, "purpose": "single-end Tag-Seq FASTQ files"},
+    {"path": "data/metadata/sample_sheet.tsv", "purpose": "technical runs to biological samples"},
+    {"path": "data/metadata/sample_gsm_mapping.tsv", "purpose": "sample to GEO accession mapping"},
+    {"path": "data/metadata/reference/GRCh38.primary_assembly.genome.fa.gz", "purpose": "GRCh38 primary assembly"},
+    {"path": "data/metadata/reference/gencode.v38.annotation.gtf.gz", "purpose": "GENCODE v38 annotation"}
+  ]
+}

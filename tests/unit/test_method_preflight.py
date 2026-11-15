@@ -20,6 +20,7 @@ from bixbench3.inspect_harness.method_preflight import (
 )
 
 TASK_11 = "10.1016_j.crtox.2021.01.003_v1"
+TASK_9 = "10_1186_s12915_024_01879_0_v1"
 
 
 def _probe_module():
@@ -46,7 +47,7 @@ def test_task_11_spec_names_only_method_guidance_requirements() -> None:
 
 def test_cases_without_a_spec_are_left_untouched() -> None:
     assert load_preflight_spec("some-other-case") is None
-    assert [path.name for path in SPEC_DIRECTORY.glob("*.json")] == [f"{TASK_11}.json"]
+    assert sorted(path.name for path in SPEC_DIRECTORY.glob("*.json")) == sorted([f"{TASK_11}.json", f"{TASK_9}.json"])
 
 
 def test_notice_is_appended_once_and_demands_repair_before_substitution() -> None:
@@ -214,3 +215,39 @@ def test_solver_is_a_no_op_for_cases_without_a_spec(monkeypatch: pytest.MonkeyPa
     monkeypatch.setattr(module, "sandbox", forbidden)
     state = asyncio.run(module.method_preflight()(_state("another-case"), None))
     assert state.user_prompt.text == "# Analysis Task\n\nBody.\n"
+
+
+def test_task_9_spec_names_only_method_guidance_requirements() -> None:
+    spec = load_preflight_spec(TASK_9)
+    assert spec is not None
+    packages = {package["name"]: package["required_version"] for package in spec["r_packages"]}
+    assert packages == {"DESeq2": "1.30.1", "clusterProfiler": "3.18.1", "org.Hs.eg.db": None}
+    tools = {command["name"]: command.get("required_version") for command in spec["commands"]}
+    assert tools["hisat2"] == "2.2.1" and tools["featureCounts"] == "2.0.1"
+    assert {"fastqc", "cutadapt", "perl", "hisat2-build"} <= set(tools)
+    assert any("z0on/tag-based_RNAseq" in entry["url"] for entry in spec["network"])
+    assert {entry["path"] for entry in spec["staged_inputs"]} >= {
+        "data/metadata/reference/GRCh38.primary_assembly.genome.fa.gz",
+        "data/metadata/reference/gencode.v38.annotation.gtf.gz",
+    }
+    assert "bixbench3-ground-truth" not in json.dumps(spec).lower()
+
+
+def test_command_probe_reports_missing_and_version_mismatch(monkeypatch: pytest.MonkeyPatch) -> None:
+    probe = _probe_module()
+    monkeypatch.setattr(probe.shutil, "which", lambda name: None if name == "fastqc" else f"/usr/bin/{name}")
+    outputs = {"hisat2": "/usr/bin/hisat2-align-s version 2.2.1", "featureCounts": "featureCounts v2.0.6"}
+    monkeypatch.setattr(probe, "run", lambda argv, timeout: (0, outputs[Path(argv[0]).name]))
+    rows = probe.probe_commands([
+        {"name": "fastqc", "purpose": "qc", "version_args": ["--version"]},
+        {"name": "hisat2", "purpose": "align", "version_args": ["--version"],
+         "version_regex": r"version (\d+(?:\.\d+)+)", "required_version": "2.2.1"},
+        {"name": "featureCounts", "purpose": "count", "version_args": ["-v"],
+         "version_regex": r"v(\d+(?:\.\d+)+)", "required_version": "2.0.1"},
+        {"name": "hisat2-build", "purpose": "index"},
+    ])
+    assert [row["status"] for row in rows] == [probe.MISSING, probe.OK, probe.VERSION_MISMATCH, probe.OK]
+    assert rows[2]["detail"] == "/usr/bin/featureCounts: found 2.0.6, guidance names 2.0.1"
+    report, summary = probe.render({"r_runtime": {}}, {"r_version": "4.2.2"}, [], rows, [], [])
+    assert "| `featureCounts` | count | 2.0.1 | **VERSION MISMATCH** |" in report
+    assert summary["problems"] == ["tool fastqc (MISSING)", "tool featureCounts (VERSION MISMATCH)"]
