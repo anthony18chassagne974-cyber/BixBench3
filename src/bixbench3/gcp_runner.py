@@ -1217,8 +1217,8 @@ def build_run_commands(
         layout.vm_name,
         zone,
         f"--machine-type={settings.machine_type}",
-        f"--boot-disk-size={settings.boot_disk_gb}GB",
-        f"--boot-disk-type={settings.boot_disk_type}",
+        (f"--create-disk=boot=yes,auto-delete=yes,device-name={settings.runtime_boot_device},"
+         f"size={settings.boot_disk_gb},type={settings.boot_disk_type}"),
         (
             "--source-machine-image="
             f"projects/{project}/global/machineImages/{settings.runtime_image_name}"

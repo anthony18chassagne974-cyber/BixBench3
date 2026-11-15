@@ -57,7 +57,7 @@ Description=bixdash read-only snapshot of the BixBench3 run
 Type=oneshot
 Nice=19
 IOSchedulingClass=idle
-Environment=PATH=/usr/local/bin:/usr/bin:/bin:/root/.local/bin:/root/.cargo/bin
+Environment=PATH=/usr/local/bin:/usr/bin:/bin:/snap/bin:/root/.local/bin:/root/.cargo/bin
 ExecStart=/usr/bin/python3 /opt/bixdash/collect.py --grade-every ${GRADE_EVERY}
 TimeoutStartSec=1200
 UNIT

@@ -480,7 +480,7 @@ def estimate_eta(elapsed: float, present: int, total: int, progress: dict, histo
 # -------------------------------------------------------------------- upload
 def gs_put(local: Path, dest: str) -> None:
     subprocess.run(["gcloud", "storage", "cp", "--quiet", str(local), dest],
-                   capture_output=True, timeout=120)
+                   capture_output=True, timeout=120, check=True)
 
 
 def main() -> int:

@@ -175,7 +175,7 @@ def test_score_only_plan_has_fixed_vm_and_no_service_account(
     attach = plan.commands["attach_data_disk"]
     assert isinstance(create, tuple)
     assert "--machine-type=n2-standard-32" in create
-    assert "--boot-disk-size=500GB" in create
+    assert any("size=500,type=pd-balanced" in arg for arg in create)
     assert (
         "--source-machine-image=projects/example-project/global/machineImages/"
         "bixbench3-runtime-v1-0-0-r7"
@@ -726,7 +726,7 @@ def test_shared_six_cpu_profile_and_disk_override(task: TaskSpec, tmp_path: Path
     plan = runner.build_run_plan(task=task, model=resolve_model('openai/gpt-5.4-mini', 'max'),
                                  results_bucket='gs://example-results')
     assert '--machine-type=n2-custom-6-32768' in plan.commands['create_run_vm']
-    assert '--boot-disk-type=pd-standard' in plan.commands['create_run_vm']
+    assert any('device-name=persistent-disk-0,size=200,type=pd-standard' in arg for arg in plan.commands['create_run_vm'])
     assert plan.public_summary()['boot_disk_type'] == 'pd-standard'
     assert runner.settings.include_10x is False
     assert runner.settings.runtime_image_name == 'shared-no10x'

@@ -69,6 +69,7 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--machine-type", default=RUN_MACHINE_TYPE, help="GCP analyst VM type")
     run.add_argument("--boot-disk-gb", type=int, default=500, help="analyst boot disk size in GB")
     run.add_argument("--boot-disk-type", choices=["pd-balanced", "pd-standard", "pd-ssd"], default="pd-balanced")
+    run.add_argument("--runtime-boot-device", default="persistent-disk-0", help="boot disk device name in the source machine image")
     run.add_argument("--runtime-image", help="existing compatible machine image in the selected project")
     run.add_argument("--no10x-runtime", action="store_true", help="runtime without licensed 10x tools; rejected for tasks requiring them")
     run.add_argument("--cost-limit", type=float, help="Inspect analyst cost limit in USD (excludes judges and cloud infrastructure)")
@@ -159,7 +160,7 @@ def _run(arguments: argparse.Namespace) -> int:
         arguments.effort,
         user_model_args=model_args,
     )
-    runner = _runner(arguments.project, machine_type=arguments.machine_type, task11_runtime=arguments.task11_runtime, boot_disk_gb=arguments.boot_disk_gb, cost_limit=arguments.cost_limit, track_live=arguments.track_live, run_description=arguments.run_description, run_condition=arguments.condition, tracking_grade_every=arguments.tracking_grade_every, boot_disk_type=arguments.boot_disk_type, runtime_image=arguments.runtime_image, no10x_runtime=arguments.no10x_runtime)
+    runner = _runner(arguments.project, machine_type=arguments.machine_type, task11_runtime=arguments.task11_runtime, boot_disk_gb=arguments.boot_disk_gb, cost_limit=arguments.cost_limit, track_live=arguments.track_live, run_description=arguments.run_description, run_condition=arguments.condition, tracking_grade_every=arguments.tracking_grade_every, boot_disk_type=arguments.boot_disk_type, runtime_image=arguments.runtime_image, no10x_runtime=arguments.no10x_runtime, runtime_boot_device=arguments.runtime_boot_device)
     if arguments.track_live and not arguments.results_bucket:
         raise ValueError("--track-live requires --results-bucket")
     result = runner.run_task(
@@ -277,7 +278,7 @@ def _print_judge_summary(result: dict[str, Any], output_root: Path) -> None:
     print(f"Process judge file: {output_root / 'judge.json'}")
 
 
-def _runner(project: str, *, machine_type: str = RUN_MACHINE_TYPE, task11_runtime: bool = False, boot_disk_gb: int = 500, cost_limit: float | None = None, track_live: bool = False, run_description: str = "", run_condition: str = "baseline", tracking_grade_every: int = 0, boot_disk_type: str = "pd-balanced", runtime_image: str | None = None, no10x_runtime: bool = False) -> GCPRunner:
+def _runner(project: str, *, machine_type: str = RUN_MACHINE_TYPE, task11_runtime: bool = False, boot_disk_gb: int = 500, cost_limit: float | None = None, track_live: bool = False, run_description: str = "", run_condition: str = "baseline", tracking_grade_every: int = 0, boot_disk_type: str = "pd-balanced", runtime_image: str | None = None, no10x_runtime: bool = False, runtime_boot_device: str = "persistent-disk-0") -> GCPRunner:
     if boot_disk_type not in {"pd-balanced", "pd-standard", "pd-ssd"}:
         raise ValueError("unsupported boot disk type")
     if no10x_runtime and not runtime_image:
@@ -295,7 +296,7 @@ def _runner(project: str, *, machine_type: str = RUN_MACHINE_TYPE, task11_runtim
     repo_root = Path(__file__).resolve().parents[2]
     settings = RuntimeSettings(
         machine_type=machine_type, include_10x=not (task11_runtime or no10x_runtime), boot_disk_gb=boot_disk_gb,
-        boot_disk_type=boot_disk_type,
+        boot_disk_type=boot_disk_type, runtime_boot_device=runtime_boot_device,
         analyst_cost_limit=cost_limit, track_live=track_live,
         run_description=run_description, run_condition=run_condition,
         tracking_grade_every=tracking_grade_every,

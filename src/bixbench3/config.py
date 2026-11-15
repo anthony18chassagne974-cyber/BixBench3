@@ -104,6 +104,7 @@ class RuntimeSettings:
     tracking_grade_every: int = 0
     boot_disk_type: str = "pd-balanced"
     boot_disk_gb: int = RUN_BOOT_DISK_GB
+    runtime_boot_device: str = "persistent-disk-0"
     runtime_image_name: str = RUNTIME_IMAGE_NAME
     runtime_image_family: str = RUNTIME_IMAGE_FAMILY
     remote_root: str = REMOTE_ROOT
