@@ -6,6 +6,7 @@ from inspect_ai.solver import Generate, Solver, TaskState, solver
 from inspect_ai.tool import bash_session, python, text_editor
 from inspect_ai.util import sandbox
 
+from .anti_loop_watcher import anti_loop_watcher
 from .model_info import register_model_info
 from .tools import request_web_access
 
@@ -21,6 +22,7 @@ def bixbench3_agent() -> Agent:
             text_editor(timeout=120),
             request_web_access(),
         ],
+        on_continue=anti_loop_watcher(),
         compaction=CompactionAuto(),
     )
 
