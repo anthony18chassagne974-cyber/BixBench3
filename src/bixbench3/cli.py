@@ -6,10 +6,11 @@ import argparse
 import json
 import sys
 from collections.abc import Sequence
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
-from .config import JsonValue, resolve_model
+from .config import RUN_MACHINE_TYPE, JsonValue, RuntimeSettings, resolve_model
 from .gcp_runner import (
     GCPRunner,
     SubprocessExecutor,
@@ -30,15 +31,18 @@ def build_parser() -> argparse.ArgumentParser:
         help="build the private licensed runtime image once",
     )
     setup.add_argument("--project", required=True, help="GCP project ID")
+    setup.add_argument("--machine-type", default=RUN_MACHINE_TYPE, help="GCP builder VM type")
+    setup.add_argument("--boot-disk-gb", type=int, default=500, help="builder boot disk size in GB")
+    setup.add_argument("--task11-runtime", action="store_true", help="build the task-11-only runtime without unused licensed 10x tools")
     setup.add_argument(
         "--cellranger-tarball",
-        required=True,
+        required=False,
         type=Path,
         help="licensed Cell Ranger 6.0.2 tarball",
     )
     setup.add_argument(
         "--cellranger-arc-tarball",
-        required=True,
+        required=False,
         type=Path,
         help="licensed Cell Ranger ARC 2.0.2 tarball",
     )
@@ -61,6 +65,10 @@ def build_parser() -> argparse.ArgumentParser:
         help="explicit reasoning effort; no default is applied",
     )
     run.add_argument("--project", required=True, help="GCP project ID")
+    run.add_argument("--machine-type", default=RUN_MACHINE_TYPE, help="GCP analyst VM type")
+    run.add_argument("--boot-disk-gb", type=int, default=500, help="analyst boot disk size in GB")
+    run.add_argument("--cost-limit", type=float, help="Inspect analyst cost limit in USD (excludes judges and cloud infrastructure)")
+    run.add_argument("--task11-runtime", action="store_true", help="use the task-11-only runtime without licensed 10x tools")
     run.add_argument(
         "--model-arg",
         action="append",
@@ -123,7 +131,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 
 
 def _setup_runtime(arguments: argparse.Namespace) -> int:
-    runner = _runner(arguments.project)
+    runner = _runner(arguments.project, machine_type=arguments.machine_type, task11_runtime=arguments.task11_runtime, boot_disk_gb=arguments.boot_disk_gb)
     result = runner.setup_runtime(
         cellranger_tarball=arguments.cellranger_tarball,
         cellranger_arc_tarball=arguments.cellranger_arc_tarball,
@@ -135,13 +143,15 @@ def _setup_runtime(arguments: argparse.Namespace) -> int:
 
 def _run(arguments: argparse.Namespace) -> int:
     task = load_public_task(arguments.task)
+    if arguments.task11_runtime and task.paper_id != "10.1016_j.crtox.2021.01.003_v1":
+        raise ValueError("--task11-runtime is restricted to task 11")
     model_args = parse_model_args(arguments.model_arg)
     model = resolve_model(
         arguments.model,
         arguments.effort,
         user_model_args=model_args,
     )
-    runner = _runner(arguments.project)
+    runner = _runner(arguments.project, machine_type=arguments.machine_type, task11_runtime=arguments.task11_runtime, boot_disk_gb=arguments.boot_disk_gb, cost_limit=arguments.cost_limit)
     result = runner.run_task(
         task=task,
         model=model,
@@ -257,11 +267,22 @@ def _print_judge_summary(result: dict[str, Any], output_root: Path) -> None:
     print(f"Process judge file: {output_root / 'judge.json'}")
 
 
-def _runner(project: str) -> GCPRunner:
+def _runner(project: str, *, machine_type: str = RUN_MACHINE_TYPE, task11_runtime: bool = False, boot_disk_gb: int = 500, cost_limit: float | None = None) -> GCPRunner:
+    if boot_disk_gb < 20:
+        raise ValueError("boot disk must be at least 20 GB")
+    if cost_limit is not None and cost_limit <= 0:
+        raise ValueError("cost limit must be positive")
     repo_root = Path(__file__).resolve().parents[2]
+    settings = RuntimeSettings(
+        machine_type=machine_type, include_10x=not task11_runtime, boot_disk_gb=boot_disk_gb,
+        analyst_cost_limit=cost_limit,
+    )
+    if task11_runtime:
+        settings = replace(settings, runtime_image_name="bixbench3-runtime-v1-0-0-r7-task11-no10x")
     return GCPRunner(
         project=project,
         executor=SubprocessExecutor(),
+        settings=settings,
         runs_root=repo_root / "runs",
         repo_root=repo_root,
     )

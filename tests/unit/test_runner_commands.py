@@ -18,6 +18,7 @@ from bixbench3.config import RuntimeSettings, resolve_model
 from bixbench3.gcp_runner import (
     GCPRunner,
     TaskSpec,
+    build_runtime_plan,
     create_runtime_source_archive,
     environment_file,
     file_sha256,
@@ -50,6 +51,90 @@ class RecordingExecutor:
         command = tuple(argv)
         self.calls.append(command)
         return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
+
+
+@pytest.mark.parametrize("machine_type", ["n2-standard-8", "n2-standard-32"])
+def test_machine_type_controls_analyst_builder_and_summary(
+    task: TaskSpec, tmp_path: Path, machine_type: str,
+) -> None:
+    settings = RuntimeSettings(machine_type=machine_type)
+    runner = GCPRunner(
+        project="example-project", executor=RecordingExecutor(), settings=settings,
+        runs_root=tmp_path, repo_root=tmp_path,
+    )
+    plan = runner.build_run_plan(
+        task=task, model=resolve_model("openai/gpt-5.5", "max"), results_bucket=None,
+    )
+    assert f"--machine-type={machine_type}" in plan.commands["create_run_vm"]
+    assert plan.public_summary()["machine_type"] == machine_type
+    build = build_runtime_plan(
+        project="example-project", settings=settings,
+        source_archive=tmp_path / "source.tar.gz", source_archive_sha256="a" * 64,
+        cellranger_tarball=tmp_path / "cellranger.tar.gz",
+        cellranger_arc_tarball=tmp_path / "cellranger-arc.tar.gz",
+        cellranger_sha256="b" * 64, cellranger_arc_sha256="c" * 64,
+    )
+    assert f"--machine-type={machine_type}" in build.commands["create_builder"]
+    arguments = build_parser().parse_args([
+        "run", "--task", "11", "--model", "openai/gpt-5.5", "--effort", "max",
+        "--project", "example-project", "--machine-type", machine_type,
+    ])
+    assert arguments.machine_type == machine_type
+    setup_arguments = build_parser().parse_args([
+        "setup-runtime", "--project", "example-project", "--machine-type", machine_type,
+        "--cellranger-tarball", "cellranger.tar.gz",
+        "--cellranger-arc-tarball", "cellranger-arc.tar.gz",
+    ])
+    assert setup_arguments.machine_type == machine_type
+
+
+def test_task11_runtime_build_requires_no_vendor_archives(tmp_path: Path) -> None:
+    settings = RuntimeSettings(
+        machine_type="n2-standard-8", include_10x=False,
+        boot_disk_gb=200,
+        runtime_image_name="bixbench3-runtime-v1-0-0-r7-task11-no10x",
+    )
+    runner = GCPRunner(
+        project="example-project", executor=RecordingExecutor(), settings=settings,
+        repo_root=Path(__file__).resolve().parents[2], runs_root=tmp_path,
+    )
+    result = runner.setup_runtime(dry_run=True)
+    assert result["include_10x"] is False
+    assert result["image_name"].endswith("task11-no10x")
+    assert "copy_cellranger" not in result["commands"]
+    assert "copy_cellranger_arc" not in result["commands"]
+    assert "--boot-disk-size=200GB" in result["commands"]["create_builder"]
+    script = remote_runtime_build_script(
+        source_archive_sha256="a" * 64,
+        cellranger_sha256="not-installed", cellranger_arc_sha256="not-installed",
+        image_tag="test-sandbox:task11", include_10x=False,
+    )
+    assert "install -m 0600" not in script
+    assert "--build-arg CELLRANGER_TARBALL=" not in script
+    assert '"runtime_profile": "task11-no10x"' in script
+    smoke = remote_runtime_smoke_script(
+        sandbox_image_tag="test-sandbox:task11", network_gateway_image_tag="test-gateway:task11",
+        include_10x=False,
+    )
+    assert "cellranger --version" not in smoke
+    assert "cellranger-arc --version" not in smoke
+    assert "Rscript --version" in smoke
+    assert "docker compose" in smoke
+    for payload in (script, smoke):
+        subprocess.run(["bash", "-n"], input=payload, text=True, check=True)
+
+
+def test_analyst_cost_limit_is_forwarded_to_inspect(task: TaskSpec, tmp_path: Path) -> None:
+    runner = GCPRunner(
+        project="example-project", executor=RecordingExecutor(),
+        settings=RuntimeSettings(analyst_cost_limit=60.0),
+        repo_root=tmp_path, runs_root=tmp_path,
+    )
+    plan = runner.build_run_plan(
+        task=task, model=resolve_model("openai/gpt-5.4-mini", "max"), results_bucket=None,
+    )
+    index = plan.inspect_argv.index("--cost-limit")
+    assert plan.inspect_argv[index + 1] == "60.0"
 
 
 @pytest.fixture

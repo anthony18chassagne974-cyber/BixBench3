@@ -115,8 +115,14 @@ class SubprocessExecutor:
         capture_output: bool = False,
     ) -> subprocess.CompletedProcess[str]:
         validate_safe_argv(argv)
+        command = list(argv)
+        ssh_key_file = os.environ.get("BIXBENCH3_SSH_KEY_FILE")
+        if ssh_key_file and "compute" in command:
+            index = command.index("compute")
+            if index + 1 < len(command) and command[index + 1] in {"ssh", "scp"}:
+                command.append(f"--ssh-key-file={ssh_key_file}")
         return subprocess.run(
-            list(argv),
+            command,
             input=input_text,
             text=True,
             check=check,
@@ -167,6 +173,8 @@ class RunPlan:
     results_uri: str | None
     commands: dict[str, Argv]
     inspect_argv: Argv
+    machine_type: str
+    boot_disk_gb: int
 
     def public_summary(self) -> dict[str, Any]:
         return {
@@ -191,8 +199,8 @@ class RunPlan:
             "data_disk_size_gb": self.task.disk_size_gb,
             "run_vm": self.layout.vm_name,
             "loader_vm": self.layout.loader_vm_name,
-            "machine_type": RuntimeSettings().machine_type,
-            "boot_disk_gb": RuntimeSettings().boot_disk_gb,
+            "machine_type": self.machine_type,
+            "boot_disk_gb": self.boot_disk_gb,
             "results_uri": self.results_uri,
             "retention": "full_bundle" if self.results_uri else "scores_only",
             "process_judge": process_judge_config(),
@@ -213,6 +221,7 @@ class RuntimeBuildPlan:
     source_archive_sha256: str
     cellranger_sha256: str
     cellranger_arc_sha256: str
+    include_10x: bool = True
 
     def public_summary(self) -> dict[str, Any]:
         return {
@@ -223,6 +232,7 @@ class RuntimeBuildPlan:
             "source_archive_sha256": self.source_archive_sha256,
             "cellranger_sha256": self.cellranger_sha256,
             "cellranger_arc_sha256": self.cellranger_arc_sha256,
+            "include_10x": self.include_10x,
             "commands": {name: list(argv) for name, argv in self.commands.items()},
         }
 
@@ -281,6 +291,8 @@ class GCPRunner:
             results_uri=results_uri,
             commands=commands,
             inspect_argv=inspect_argv,
+            machine_type=self.settings.machine_type,
+            boot_disk_gb=self.settings.boot_disk_gb,
         )
         validate_plan(plan)
         return plan
@@ -720,18 +732,17 @@ class GCPRunner:
     def setup_runtime(
         self,
         *,
-        cellranger_tarball: Path,
-        cellranger_arc_tarball: Path,
+        cellranger_tarball: Path | None = None,
+        cellranger_arc_tarball: Path | None = None,
         dry_run: bool = False,
     ) -> dict[str, Any]:
-        cellranger_sha = validate_vendor_tarball(
-            cellranger_tarball,
-            expected_name="cellranger-6.0.2",
-        )
-        cellranger_arc_sha = validate_vendor_tarball(
-            cellranger_arc_tarball,
-            expected_name="cellranger-arc-2.0.2",
-        )
+        if self.settings.include_10x:
+            if cellranger_tarball is None or cellranger_arc_tarball is None:
+                raise ValueError("both licensed Cell Ranger archives are required for the full runtime")
+            cellranger_sha = validate_vendor_tarball(cellranger_tarball, expected_name="cellranger-6.0.2")
+            cellranger_arc_sha = validate_vendor_tarball(cellranger_arc_tarball, expected_name="cellranger-arc-2.0.2")
+        else:
+            cellranger_sha = cellranger_arc_sha = "not-installed"
         with tempfile.TemporaryDirectory(prefix="bixbench3-runtime-source-") as temporary:
             source_archive = Path(temporary) / "bixbench3-source.tar.gz"
             create_runtime_source_archive(self.repo_root, source_archive)
@@ -815,13 +826,14 @@ class GCPRunner:
                 input_text=remote_builder_prepare_script(),
             )
             print(
-                "[6/10] uploading the runner source and licensed 10x archives",
+                "[6/10] uploading runtime build inputs",
                 file=sys.stderr,
                 flush=True,
             )
             self.executor.run(plan.commands["copy_source_archive"])
-            self.executor.run(plan.commands["copy_cellranger"])
-            self.executor.run(plan.commands["copy_cellranger_arc"])
+            if plan.include_10x:
+                self.executor.run(plan.commands["copy_cellranger"])
+                self.executor.run(plan.commands["copy_cellranger_arc"])
             print(
                 "[7/10] building the runtime; dependency and container downloads may take several minutes",
                 file=sys.stderr,
@@ -834,10 +846,11 @@ class GCPRunner:
                     cellranger_sha256=plan.cellranger_sha256,
                     cellranger_arc_sha256=plan.cellranger_arc_sha256,
                     image_tag=f"bixbench3-sandbox:{__version__}",
+                    include_10x=plan.include_10x,
                 ),
             )
             print(
-                "[8/10] smoke-testing Cell Ranger, the network gateway, and the CLI",
+                "[8/10] smoke-testing the runtime, network gateway, and CLI",
                 file=sys.stderr,
                 flush=True,
             )
@@ -846,6 +859,7 @@ class GCPRunner:
                 input_text=remote_runtime_smoke_script(
                     sandbox_image_tag=f"bixbench3-sandbox:{__version__}",
                     network_gateway_image_tag=(f"bixbench3-network-gateway:{__version__}"),
+                    include_10x=plan.include_10x,
                 ),
             )
             print(
@@ -1432,6 +1446,8 @@ def build_inspect_argv(
         "--metadata",
         f"resolved_effort={model.resolved_effort}",
     ]
+    if settings.analyst_cost_limit is not None:
+        parts.extend(("--cost-limit", str(settings.analyst_cost_limit)))
     for key, value in sorted(model.model_args.items()):
         if _MODEL_ARG_NAME.fullmatch(key) is None:
             raise ValueError(f"invalid Inspect model argument name {key!r}")
@@ -1446,8 +1462,8 @@ def build_runtime_plan(
     settings: RuntimeSettings,
     source_archive: Path,
     source_archive_sha256: str,
-    cellranger_tarball: Path,
-    cellranger_arc_tarball: Path,
+    cellranger_tarball: Path | None,
+    cellranger_arc_tarball: Path | None,
     cellranger_sha256: str,
     cellranger_arc_sha256: str,
 ) -> RuntimeBuildPlan:
@@ -1498,8 +1514,8 @@ def build_runtime_plan(
             "create",
             builder,
             zone,
-            "--machine-type=n2-standard-32",
-            "--boot-disk-size=500GB",
+            f"--machine-type={settings.machine_type}",
+            f"--boot-disk-size={settings.boot_disk_gb}GB",
             "--boot-disk-type=pd-balanced",
             "--image-family=ubuntu-2404-lts-amd64",
             "--image-project=ubuntu-os-cloud",
@@ -1526,7 +1542,7 @@ def build_runtime_plan(
             *base,
             "compute",
             "scp",
-            str(cellranger_tarball.resolve()),
+            str(cellranger_tarball.resolve()) if cellranger_tarball else "unused",
             f"{builder}:~/cellranger-6.0.2.tar.gz",
             zone,
         ),
@@ -1534,7 +1550,7 @@ def build_runtime_plan(
             *base,
             "compute",
             "scp",
-            str(cellranger_arc_tarball.resolve()),
+            str(cellranger_arc_tarball.resolve()) if cellranger_arc_tarball else "unused",
             f"{builder}:~/cellranger-arc-2.0.2.tar.gz",
             zone,
         ),
@@ -1579,6 +1595,9 @@ def build_runtime_plan(
             "--quiet",
         ),
     }
+    if not settings.include_10x:
+        del commands["copy_cellranger"]
+        del commands["copy_cellranger_arc"]
     for argv in commands.values():
         validate_safe_argv(argv, allow_ephemeral_instance_delete=True)
     return RuntimeBuildPlan(
@@ -1590,6 +1609,7 @@ def build_runtime_plan(
         source_archive_sha256=source_archive_sha256,
         cellranger_sha256=cellranger_sha256,
         cellranger_arc_sha256=cellranger_arc_sha256,
+        include_10x=settings.include_10x,
     )
 
 
@@ -2264,8 +2284,9 @@ def remote_runtime_build_script(
     cellranger_sha256: str,
     cellranger_arc_sha256: str,
     image_tag: str,
+    include_10x: bool = True,
 ) -> str:
-    return f"""set -euo pipefail
+    script = f"""set -euo pipefail
 builder_home=/home/"${{SUDO_USER:-$USER}}"
 source_archive="$builder_home/bixbench3-source.tar.gz"
 source_root="$builder_home/bixbench3-source"
@@ -2295,18 +2316,41 @@ cd /opt/bixbench3
 uv sync --frozen
 rm -f "$source_archive"
 cat >/etc/bixbench3-runtime.json <<'EOF'
-{json.dumps({"benchmark_version": BENCHMARK_VERSION, "package_version": __version__, "source_archive_sha256": source_archive_sha256, "sandbox_image": image_tag, "network_gateway_image": f"bixbench3-network-gateway:{__version__}", "cellranger_sha256": cellranger_sha256, "cellranger_arc_sha256": cellranger_arc_sha256}, indent=2)}
+{json.dumps({"benchmark_version": BENCHMARK_VERSION, "package_version": __version__, "source_archive_sha256": source_archive_sha256, "sandbox_image": image_tag, "network_gateway_image": f"bixbench3-network-gateway:{__version__}", "include_10x": include_10x, "runtime_profile": "full" if include_10x else "task11-no10x", "cellranger_sha256": cellranger_sha256, "cellranger_arc_sha256": cellranger_arc_sha256}, indent=2)}
 EOF
 chmod 0444 /etc/bixbench3-runtime.json
 """
+    if not include_10x:
+        start = script.index('mkdir -p "$source_root/operator-cache/10x"')
+        end = script.index('docker build --pull --tag bixbench3-network-gateway:')
+        preparation = '''python3 - "$source_root" <<'PY'
+from pathlib import Path
+import sys
+root = Path(sys.argv[1])
+dockerfile = root / "sandbox/Dockerfile"
+text = dockerfile.read_text()
+assert text.count("ARG CELLRANGER_TARBALL=") == 1
+dockerfile.write_text(text.split("ARG CELLRANGER_TARBALL=", 1)[0] + "WORKDIR /workspace\\n")
+packages = root / "sandbox/available_packages.yaml"
+text = packages.read_text()
+assert text.count("  - title: 10x Genomics single-cell tools") == 1
+packages.write_text(text.split("  - title: 10x Genomics single-cell tools", 1)[0])
+PY
+'''
+        script = script[:start] + preparation + (
+            f'docker build --pull --tag {shlex.quote(image_tag)} '
+            '--file "$source_root/sandbox/Dockerfile" "$source_root"\n'
+        ) + script[end:]
+    return script
 
 
 def remote_runtime_smoke_script(
     *,
     sandbox_image_tag: str,
     network_gateway_image_tag: str,
+    include_10x: bool = True,
 ) -> str:
-    return f"""set -euo pipefail
+    script = f"""set -euo pipefail
 docker run --rm {shlex.quote(sandbox_image_tag)} cellranger --version
 docker run --rm {shlex.quote(sandbox_image_tag)} cellranger-arc --version
 docker image inspect {shlex.quote(network_gateway_image_tag)} >/dev/null
@@ -2324,6 +2368,11 @@ BIXBENCH3_OUTPUTS_DIR=/tmp/outputs \
 docker compose -f sandbox/compose.yaml config >/dev/null
 uv run bixbench3 --help >/dev/null
 """
+    if not include_10x:
+        script = "\n".join(line for line in script.splitlines() if " cellranger" not in line) + "\n"
+        script += f"docker run --rm {shlex.quote(sandbox_image_tag)} Rscript --version\n"
+        script += f"docker run --rm {shlex.quote(sandbox_image_tag)} python3 -c 'import numpy, pandas, scipy'\n"
+    return script
 
 
 def selected_environment(keys: Sequence[str]) -> dict[str, str]:
