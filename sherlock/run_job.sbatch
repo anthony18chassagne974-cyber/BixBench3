@@ -100,6 +100,10 @@ open(sys.argv[2], "w", encoding="utf-8").write(patched)
 PY
 [ $? -eq 0 ] || exit 2
 printf '127.0.0.1 localhost\n127.0.0.1 network-gateway\n::1 localhost\n' > "$JOB/hosts"
+# apt under `apptainer --fakeroot` (root-mapped user namespace, no /etc/subuid): apt cannot drop to
+# its _apt user (setgroups fails) and the image's archives/partial dir belongs to _apt (unmapped, so
+# root cannot write it). In the GCP Docker sandbox apt works as root; these two settings restore that.
+printf 'APT::Sandbox::User "root";\nDir::Cache::Archives "/var/cache/apt/sherlock-archives/";\n' > "$JOB/apt-sherlock.conf"
 NCPU=$(python3 "$REPO/sherlock/cpu_view.py" "$JOB/cpuinfo" "$JOB/cpu_online")
 echo "[sherlock] sandbox CPU view: $NCPU CPUs"
 
@@ -111,7 +115,8 @@ cfg = {
     "sif": "$JOB/bixbench3-sandbox_1.0.0.sif",
     "overlay_dir": "$JOB/overlay",
     "binds": [["$DATA_DIR", "/data", "ro"], ["$RUN_ROOT/workspace", "/workspace", "rw"], ["$RUN_ROOT/outputs", "/outputs", "rw"],
-              ["$JOB/cpuinfo", "/proc/cpuinfo", "ro"], ["$JOB/cpu_online", "/sys/devices/system/cpu/online", "ro"]],
+              ["$JOB/cpuinfo", "/proc/cpuinfo", "ro"], ["$JOB/cpu_online", "/sys/devices/system/cpu/online", "ro"],
+              ["$JOB/apt-sherlock.conf", "/etc/apt/apt.conf.d/99-sherlock-fakeroot", "ro"]],
     "jail_dir": "$JOB/jaildir",
     "jail_log_dir": "$JOB/jaillog",
     "proxy_port": $SQUID_PORT,

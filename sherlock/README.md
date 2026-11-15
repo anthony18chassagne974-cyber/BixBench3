@@ -16,7 +16,10 @@ experiment branches.
 
 Different, because of Sherlock: CPU model (speed), network isolation mechanism (`bb3jail`
 instead of Docker networks: Sherlock has no network or PID namespaces), the proxy port number,
-`/proc/cpuinfo` and `/sys/devices/system/cpu/online` are bound to show the job's CPUs only.
+`/proc/cpuinfo` and `/sys/devices/system/cpu/online` are bound to show the job's CPUs only,
+an apt config (`/etc/apt/apt.conf.d/99-sherlock-fakeroot`) lets `apt-get` run as root under
+`--fakeroot` as it does in Docker (without it apt fails with `setgroups ... Operation not permitted`;
+runs submitted before this fix, e.g. the first 4 t11 baselines, had no working apt).
 **Compare Sherlock runs with Sherlock runs** (run a Sherlock baseline per task).
 
 ## Pieces
