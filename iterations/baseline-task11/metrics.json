@@ -1,0 +1,27 @@
+{
+  "aggregate_estimated_usd": 3.0231406499999998,
+  "unattributed_cost_usd": 0.14207849999999977,
+  "model_calls": 406,
+  "tool_calls": 407,
+  "shell_reads": 168,
+  "shell_restarts": 3,
+  "agent_minutes": 103.75,
+  "usage": {
+    "input_tokens": 715803,
+    "output_tokens": 165780,
+    "total_tokens": 24085295,
+    "input_tokens_cache_write": null,
+    "input_tokens_cache_read": 23203712,
+    "reasoning_tokens": 121009,
+    "total_cost": null
+  },
+  "sum_model_call_wall_seconds": 2168.327212,
+  "tool_functions": {
+    "bash_session": 265,
+    "request_web_access": 12,
+    "python": 108,
+    "text_editor": 21,
+    "submit": 1
+  },
+  "visible_calls_estimated_usd": 2.88106215
+}

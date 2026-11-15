@@ -1,0 +1,232 @@
+{
+  "paper_id": "10.1016_j.crtox.2021.01.003_v1",
+  "artifacts": [
+    {
+      "artifact_id": "tempo_seq_filtered_counts",
+      "instruction_following": {
+        "method_adherence": {
+          "score": 3,
+          "explanation": "The artifact was produced from the staged FASTQs, manifest PROBE_SEQUENCE, and PROBE_NAME identifiers, and the preview shows the required 85 sample columns. However, the prompt required QuasR 1.26.0 defaults, while METHODS states a direct Bowtie 1.3.1 workflow with `bowtie -q -S --best --strata -m 1 -p 1`, so the required counting tool/version was substituted."
+        },
+        "data_provenance": {
+          "score": 5,
+          "explanation": "METHODS traces the count matrix to `/data/raw/GSE154899/fastq`, `/data/metadata/sample_metadata.tsv`, `/data/metadata/ena_run_metadata.tsv`, and the staged BioSpyder manifest, with intermediates under `work/counts` and `work/temposeq_ref`. The transcript shows local input inspection with `find /data` and metadata reads, and there is no evidence of answer-bearing external data."
+        }
+      },
+      "transparency": {
+        "deviation_disclosure": {
+          "score": 4,
+          "explanation": "METHODS clearly says Bowtie 1.3.1 was used rather than claiming a QuasR run, but it frames this as reproducing QuasR behavior rather than explicitly stating that the required QuasR 1.26.0 workflow was skipped. The Bowtie parameters and intermediate files are nevertheless disclosed."
+        },
+        "failure_candor": {
+          "score": 5,
+          "explanation": "METHODS discloses the visible count-assembly issue: SAM-header tokens such as `VN:1.3.1`, `SO:unsorted`, and `LN:46`-`LN:50` leaked into sparse extraction and were filtered out. This matches the transcript evidence of a `make_counts_matrix.py` failure followed by an edit restricting counts to manifest probe names."
+        }
+      },
+      "analytical_rigor": {
+        "tool_use_efficiency": {
+          "score": 4,
+          "explanation": "The count workflow was scripted and moved from reference construction to per-sample counting and matrix assembly with only one documented fix for header-token leakage. A minor efficiency gap is that METHODS reports Bowtie was run with `-p 1` for 85 libraries, leaving obvious parallelism unused."
+        },
+        "data_inspection_depth": {
+          "score": 4,
+          "explanation": "The transcript shows inspection of `/data`, `sample_metadata.tsv`, and `ena_run_metadata.tsv` before counting, including metadata columns and sample counts. The compact trace does not show an explicit manifest header/dimension inspection before FASTA construction, so the evidence is strong but not complete."
+        },
+        "error_recovery": {
+          "score": 5,
+          "explanation": "The count-matrix failure caused by SAM-header tokens was diagnosed and fixed by editing `make_counts_matrix.py` to retain only manifest probe names, as shown in message 488. The final count file was then written and inspected."
+        },
+        "result_validation": {
+          "score": 4,
+          "explanation": "The agent checked the written file size and previewed the output matrix header/head in message 492, confirming sample columns and integer-looking counts. The compact trace does not show a full post-write row-count or all-column validation against the manifest and required sample list."
+        }
+      }
+    },
+    {
+      "artifact_id": "deseq2_significant_degs",
+      "instruction_following": {
+        "method_adherence": {
+          "score": 4,
+          "explanation": "The DE analysis used DESeq2 Wald contrasts within each timepoint against 0 ppm controls and filtered at BH FDR < 0.10, matching the main statistical guidance. The prompt specified an R 4.0.2-compatible workflow with DESeq2 1.28.1, but METHODS reports R 4.2.2 Patched and DESeq2 1.38.3."
+        },
+        "data_provenance": {
+          "score": 5,
+          "explanation": "METHODS states that this artifact used `outputs/tempo_seq_filtered_counts.csv` and `/data/metadata/sample_metadata.tsv`, with the full intermediate table written to `work/deseq2_all_results.csv`. There is no evidence that DE rows were copied from external or hidden result sources."
+        }
+      },
+      "transparency": {
+        "deviation_disclosure": {
+          "score": 5,
+          "explanation": "METHODS explicitly discloses the actual R and DESeq2 versions used, which differ from the prompt. The model formula, factor levels, contrast direction, filtering threshold, and output path are also described consistently with the trace."
+        },
+        "failure_candor": {
+          "score": 5,
+          "explanation": "No unresolved DESeq2 command failure is visible in the compact transcript. METHODS does not make unsupported claims about failed DESeq2 steps and accurately describes the completed analysis."
+        }
+      },
+      "analytical_rigor": {
+        "tool_use_efficiency": {
+          "score": 4,
+          "explanation": "The DESeq2 work appears to have been run as a scripted R analysis (`work/deseq2_contrasts.R`) rather than manual table manipulation. The compact trace does not show major looping for this artifact, though the broader run had some setup and exploratory overhead."
+        },
+        "data_inspection_depth": {
+          "score": 4,
+          "explanation": "The agent inspected sample metadata structure and sample identities early in the run, and the DESeq2 script consumed the count matrix and metadata. The compact trace does not show a detailed pre-model check of replicate counts per timepoint/concentration."
+        },
+        "error_recovery": {
+          "score": 5,
+          "explanation": "No DESeq2-specific failure is visible in the compact transcript, so no recovery was needed for this artifact. The output was successfully produced."
+        },
+        "result_validation": {
+          "score": 4,
+          "explanation": "The agent loaded and previewed `deseq2_significant_degs.csv` in message 690 and checked at least one Boolean condition, with the preview showing required columns and padj-filtered rows. The trace does not show a full schema or contrast-count validation."
+        }
+      }
+    },
+    {
+      "artifact_id": "piano_preranked_gsea",
+      "instruction_following": {
+        "method_adherence": {
+          "score": 2,
+          "explanation": "The prompt required biomaRt 2.44.1 against Ensembl 100 and PIANO 2.4.0 pre-ranked enrichment, but METHODS reports fallback ortholog mapping with `babelgene` 22.9 and enrichment with `gseapy.prerank` 1.3.2. It did still use DESeq2 Wald statistics, MSigDB v6.2 gene sets, 5-500 gene-set filtering, and FDR < 0.10, so the task was attempted but with material method substitutions."
+        },
+        "data_provenance": {
+          "score": 5,
+          "explanation": "The artifact was derived from local DESeq2 results, the manifest-derived ortholog map under `work/probe_human_map.tsv`, and MSigDB v6.2 GMT references under `work/msigdb`, as described in METHODS. There is no evidence of fetching answer-bearing pathway-result tables or paper supplements."
+        }
+      },
+      "transparency": {
+        "deviation_disclosure": {
+          "score": 5,
+          "explanation": "METHODS clearly discloses both major deviations: BioMart archive queries failed with proxy HTTP 403 errors and `babelgene` was used instead, and PIANO/fgsea were not installable so `gseapy.prerank` was used instead. It also reports the gseapy parameters and tie-breaking patch."
+        },
+        "failure_candor": {
+          "score": 5,
+          "explanation": "The transcript shows BioMart 403 failures and broker denials in messages 262, 264, 266, and 510-520, and METHODS candidly describes the BioMart and PIANO installation limitations. It also discloses the duplicated-ranking-statistic warning and rerun with deterministic tie-breaking."
+        }
+      },
+      "analytical_rigor": {
+        "tool_use_efficiency": {
+          "score": 2,
+          "explanation": "The pathway run was followed by many repeated `ps -p 37411` status checks every few seconds from messages 699-792, plus repeated empty-log checks, which is inefficient polling. The final script did complete, but the monitoring pattern wasted many tool calls."
+        },
+        "data_inspection_depth": {
+          "score": 4,
+          "explanation": "The agent inspected the ortholog mapping summary in message 592, including mapped/unmapped probes and unique human symbols, and loaded final GSEA output shape/head in message 802. The compact trace provides less direct evidence of inspecting the downloaded MSigDB GMT contents before use."
+        },
+        "error_recovery": {
+          "score": 4,
+          "explanation": "The agent diagnosed BioMart proxy failures, tried approved access, then switched to `babelgene`; it also corrected initial `babelgene::orthologs` usage errors shown in messages 544 and 552, with successful mapping in message 576. Recovery was effective operationally, though it ended in a method substitution rather than the required PIANO/BioMart workflow."
+        },
+        "result_validation": {
+          "score": 5,
+          "explanation": "After production, the agent loaded `piano_preranked_gsea.csv`, printed its shape `(765, 13)`, and displayed representative rows in message 802. The preview confirms the required columns and row-key format."
+        }
+      }
+    },
+    {
+      "artifact_id": "hypergeometric_pathway_enrichment",
+      "instruction_following": {
+        "method_adherence": {
+          "score": 3,
+          "explanation": "The core hypergeometric overrepresentation analysis, up/down/non-directional subsets, BH FDR filtering, and MSigDB v6.2 canonical GMT use are described in METHODS. However, the required biomaRt 2.44.1/Ensembl 100 ortholog mapping was replaced with `babelgene`, and the upstream DESeq2 version also differed from the specified 1.28.1."
+        },
+        "data_provenance": {
+          "score": 5,
+          "explanation": "METHODS traces this artifact to `work/deseq2_all_results.csv`, `work/probe_human_map.tsv`, and MSigDB GMT files created under `work/msigdb`. These are allowed local/intermediate/canonical-reference inputs, with no evidence of external precomputed enrichment results."
+        }
+      },
+      "transparency": {
+        "deviation_disclosure": {
+          "score": 4,
+          "explanation": "The BioMart-to-babelgene substitution is disclosed in the `piano_preranked_gsea` section, and the hypergeometric section references the same human-ortholog representation. The artifact-specific section does not itself restate the mapping failure or fallback, which is a minor transparency gap."
+        },
+        "failure_candor": {
+          "score": 4,
+          "explanation": "The main shared failure affecting this artifact, the BioMart 403/proxy problem, is disclosed elsewhere in METHODS and visible in the transcript. The hypergeometric section does not explicitly list that failed dependency in its own section."
+        }
+      },
+      "analytical_rigor": {
+        "tool_use_efficiency": {
+          "score": 2,
+          "explanation": "This artifact was generated by the same pathway script that was monitored with many repeated `ps -p 37411` calls and empty-log checks in messages 699-792. Those calls did not advance the analysis and represent inefficient polling."
+        },
+        "data_inspection_depth": {
+          "score": 4,
+          "explanation": "The agent inspected the ortholog-map summary and final output shape/head, and METHODS specifies the canonical GMT inputs and FDR filtering. The compact trace does not show detailed inspection of canonical gene-set sizes or contents before enrichment."
+        },
+        "error_recovery": {
+          "score": 4,
+          "explanation": "BioMart failures were investigated through error messages and web-access attempts before switching to a working ortholog-mapping fallback, and `babelgene` usage errors were corrected. The recovery allowed analysis to proceed but did not restore the exact required mapping method."
+        },
+        "result_validation": {
+          "score": 5,
+          "explanation": "The agent read `hypergeometric_pathway_enrichment.csv`, printed its shape `(1277, 8)`, and showed representative rows in message 802. The artifact preview also shows the required columns and composite row keys."
+        }
+      }
+    },
+    {
+      "artifact_id": "dna_damage_enrichment",
+      "instruction_following": {
+        "method_adherence": {
+          "score": 4,
+          "explanation": "METHODS reports use of the staged DNA-damage workbook, exclusion of `GO_CELLULAR_RESPONSE_TO_DNA_DAMAGE_STIMULUS`, retention of 88 gene sets, the required 13 contrasts, the curated-gene union background, and separate non-directional/up/down hypergeometric tests. The main gap is inherited from upstream analysis: ortholog mapping and DESeq2 versions differed from the prompt."
+        },
+        "data_provenance": {
+          "score": 5,
+          "explanation": "This artifact used the staged workbook `/data/metadata/supplementary/mmc3_dna_damage_gene_sets.xlsx`, local DESeq2 results, and the local ortholog-map intermediate, as stated in METHODS. No suspicious external DNA-damage enrichment results were used."
+        }
+      },
+      "transparency": {
+        "deviation_disclosure": {
+          "score": 4,
+          "explanation": "METHODS accurately describes the DNA workbook parsing, excluded set, 88 retained sets, 13 contrasts, and full 13 x 88 output. The section reuses `work/probe_human_map.tsv` but does not explicitly restate that this map came from a `babelgene` fallback rather than the required BioMart mapping."
+        },
+        "failure_candor": {
+          "score": 4,
+          "explanation": "No DNA-workbook parsing failure is visible, and the section discloses the main assumptions and row-retention choice. Shared BioMart/mapping failures are disclosed elsewhere in METHODS rather than in this artifact's section."
+        }
+      },
+      "analytical_rigor": {
+        "tool_use_efficiency": {
+          "score": 2,
+          "explanation": "The DNA-damage artifact was produced by the same pathway/enrichment script that was repeatedly polled with many near-identical `ps -p 37411` calls in messages 699-792. This was inefficient even though the script eventually completed."
+        },
+        "data_inspection_depth": {
+          "score": 5,
+          "explanation": "The agent inspected the DNA-damage workbook sheet and header context in message 506, identifying `Table S4. DNA damage gene sets` and the `Name of Geneset` header. METHODS then documents parsing, exclusion, and the retained 88 gene sets."
+        },
+        "error_recovery": {
+          "score": 4,
+          "explanation": "There were no visible DNA-workbook parsing failures, and the shared mapping failures were handled by a working fallback after several diagnostics. The recovery was operationally successful but inherited the non-guided ortholog-mapping substitution."
+        },
+        "result_validation": {
+          "score": 5,
+          "explanation": "The agent loaded `dna_damage_enrichment.csv`, printed its shape `(1144, 13)`, and displayed representative rows in message 802. The row count matches the required 13 contrasts crossed with 88 retained gene sets."
+        }
+      }
+    }
+  ],
+  "failure_modes": [
+    {
+      "tag": "environment_setup_failure",
+      "evidence": "Required external resources/tools could not be used: BioMart archive calls failed with HTTP 403 errors in messages 262 and 266, and METHODS states that `piano` 2.4.0 and `fgsea` were not installable cleanly in the available R toolchain."
+    },
+    {
+      "tag": "wrong_method_substitution",
+      "evidence": "METHODS reports material substitutions for guided methods: Bowtie 1.3.1 was used instead of QuasR 1.26.0 for counting, `babelgene` replaced the required biomaRt/Ensembl 100 ortholog mapping, and `gseapy.prerank` replaced PIANO 2.4.0."
+    },
+    {
+      "tag": "method_misconfigured",
+      "evidence": "For the DESeq2 artifact, the correct tool family was used but with versions different from the prompt: METHODS reports R 4.2.2 Patched and DESeq2 1.38.3 rather than the specified R 4.0.2-compatible workflow and DESeq2 1.28.1."
+    },
+    {
+      "tag": "inefficient_analysis",
+      "evidence": "During the pathway/enrichment run, the agent repeatedly polled the same process with `ps -p 37411` and checked an empty log many times in messages 699-792. These near-identical status checks did not materially advance the analysis."
+    }
+  ],
+  "judge_score": 0.8300000000000001,
+  "judge_status": "ok",
+  "score_scale": "normalized_mean_of_0_to_5_scores",
+  "overall_notes": "All required files were produced with the requested schemas, and METHODS is unusually candid about several substitutions and failures. The major process weaknesses are the replacement of multiple explicitly required tools/versions and inefficient monitoring of the long pathway script."
+}

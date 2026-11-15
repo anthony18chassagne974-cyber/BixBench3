@@ -1,0 +1,12 @@
+{
+  "artifact-errors.png": "7108d9a67cd3e20430a4fb431cd958c5dcc38295cdcf87b90b5fb20c77bd4dbf",
+  "grade.json": "a0ac241b0320530791a58b73d18e05eda813905c5815c23ee791b2bd9c3393a9",
+  "inspect.eval": "3e71d608fa432dbb3653744e1a7a3ee741c2444f5ffaa69ac6fcdfa7c8868c47",
+  "inspect.json.gz": "c34f6a390299d0a1e01d63daf15fa10e5bdcd66d7bae2953623f8e689a5e3c7f",
+  "judge.json": "954ca8516577b23c4b61636f9008c4bf5b4aa8587955deb82193c570e8fe466e",
+  "metrics.json": "b0f1dfdc30fdb0ef6d75429af19c5a74fe38e56b02206d0fe5cfe4608d41c23d",
+  "model-calls.csv": "d48b6df9363e3e4e44ace679f91a637f1815ef3f6d2f059d6f5bb76e1562378a",
+  "overview.png": "fe1c4b088b4118ce902d24ffaaca3bec3fbf2cb2cfea88e95f38ecb7da93073c",
+  "run_manifest.json": "f3e702df5292f6566f8697dad468f7b93794d3f58629b0d118fcc671a45b0834",
+  "tool-trace.html": "9d7afbc765bc3d5c066c136461a091b3250e5d66e3be453061e9eede9ad9f220"
+}
