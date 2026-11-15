@@ -1,0 +1,27 @@
+{
+  "source": "Transcribed by hand from the Method Guidance section of the task 11 agent prompt. No grader output, reference artifact or ground truth was used.",
+  "r_runtime": {
+    "required": "an R 4.0.2-compatible workflow"
+  },
+  "r_packages": [
+    {"name": "QuasR", "required_version": "1.26.0", "purpose": "TempO-Seq probe alignment and counting (QuasR defaults)"},
+    {"name": "DESeq2", "required_version": "1.28.1", "purpose": "size factors and Wald contrasts"},
+    {"name": "biomaRt", "required_version": "2.44.1", "purpose": "mouse-to-human ortholog mapping (Ensembl 100)"},
+    {"name": "piano", "required_version": "2.4.0", "purpose": "pre-ranked gene-set enrichment"},
+    {"name": "fgsea", "required_version": null, "optional": true, "purpose": "GSEA backend that piano can call; not named by the guidance"}
+  ],
+  "commands": [],
+  "network": [
+    {"name": "Ensembl 100 BioMart archive", "url": "https://apr2020.archive.ensembl.org/biomart/martservice", "purpose": "live BioMart ortholog queries named by the guidance"},
+    {"name": "MSigDB v6.2 canonical pathways (c2.cp)", "url": "https://data.broadinstitute.org/gsea-msigdb/msigdb/release/6.2/c2.cp.v6.2.symbols.gmt", "purpose": "KEGG, Reactome, BioCarta, NABA, PID and other canonical pathway gene sets"},
+    {"name": "MSigDB v6.2 Hallmark (h.all)", "url": "https://data.broadinstitute.org/gsea-msigdb/msigdb/release/6.2/h.all.v6.2.symbols.gmt", "purpose": "Hallmark gene sets"},
+    {"name": "Bioconductor", "url": "https://bioconductor.org/config.yaml", "purpose": "BiocManager package installation"},
+    {"name": "CRAN", "url": "https://cloud.r-project.org/", "purpose": "R package installation"}
+  ],
+  "staged_inputs": [
+    {"path": "data/raw/GSE154899/fastq", "glob": "*.fastq.gz", "expected_count": 85, "purpose": "single-end TempO-Seq FASTQ files"},
+    {"path": "data/metadata/sample_metadata.tsv", "purpose": "sample metadata"},
+    {"path": "data/metadata/temposeq/100770_mus_musculus_wt_11_full_manifest_revB.csv", "purpose": "BioSpyder probe manifest"},
+    {"path": "data/metadata/supplementary/mmc3_dna_damage_gene_sets.xlsx", "purpose": "curated DNA-damage gene sets"}
+  ]
+}
