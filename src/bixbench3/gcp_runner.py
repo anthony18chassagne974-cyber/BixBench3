@@ -72,6 +72,11 @@ _RUNTIME_SOURCE_FILES = (
     "LICENSE",
 )
 _RUNTIME_SOURCE_DIRECTORIES = ("src", "sandbox")
+UPSTREAM_HARNESS_COMMIT = "d0e0bbb41222335b1b8878f533a58466a3a782dc"
+# Only the Inspect agent harness is overlaid. Grading, judging, the network gateway and
+# the sandbox image stay exactly as baked into the runtime machine image.
+_HARNESS_OVERLAY_PATHS = ("src/bixbench3/inspect_harness",)
+_HARNESS_OVERLAY_ARCHIVE = "bixbench3-harness-overlay.tar.gz"
 _RUNTIME_ARCHIVE_EXCLUDED_PARTS = frozenset(
     {
         ".git",
@@ -176,6 +181,7 @@ class RunPlan:
     machine_type: str
     boot_disk_gb: int
     boot_disk_type: str
+    harness_overlay: bool = False
 
     def public_summary(self) -> dict[str, Any]:
         return {
@@ -203,6 +209,7 @@ class RunPlan:
             "machine_type": self.machine_type,
             "boot_disk_gb": self.boot_disk_gb,
             "boot_disk_type": self.boot_disk_type,
+            "harness_overlay": self.harness_overlay,
             "results_uri": self.results_uri,
             "retention": "full_bundle" if self.results_uri else "scores_only",
             "process_judge": process_judge_config(),
@@ -296,6 +303,7 @@ class GCPRunner:
             machine_type=self.settings.machine_type,
             boot_disk_gb=self.settings.boot_disk_gb,
             boot_disk_type=self.settings.boot_disk_type,
+            harness_overlay=self.settings.harness_overlay,
         )
         validate_plan(plan)
         return plan
@@ -389,11 +397,17 @@ class GCPRunner:
         )
         self._ensure_data_disk(plan)
         plan.layout.materialize()
+        harness_overlay = (
+            create_harness_overlay(self.repo_root, plan.layout.manifest_path.parent)
+            if self.settings.harness_overlay
+            else None
+        )
         manifest = self._initial_manifest(
             plan,
             preflight,
             staged_case=staged_case,
         )
+        manifest["harness_overlay"] = harness_overlay or {"enabled": False}
         write_json(plan.layout.manifest_path, manifest)
 
         vm_created = False
@@ -418,6 +432,8 @@ class GCPRunner:
             )
             self.executor.run(plan.commands["copy_run_manifest"])
             self.executor.run(plan.commands["copy_case_dataset"])
+            if harness_overlay:
+                self._install_harness_overlay(plan, harness_overlay)
             self.executor.run(
                 plan.commands["stream_environment"],
                 input_text=environment_file(environment),
@@ -514,6 +530,24 @@ class GCPRunner:
                 else lifecycle_command("status", run_id, self.project)
             ),
         }
+
+    def _install_harness_overlay(self, plan: RunPlan, overlay: Mapping[str, Any]) -> None:
+        """Replace the image's Inspect harness with this checkout's committed one."""
+        archive = plan.layout.manifest_path.parent / _HARNESS_OVERLAY_ARCHIVE
+        if not archive.is_file():
+            raise RuntimeError(f"missing harness overlay archive: {archive}")
+        base = ("gcloud", "--project", self.project)
+        self.executor.run((
+            *base, "compute", "scp", str(archive.resolve()),
+            f"{plan.layout.vm_name}:~/{_HARNESS_OVERLAY_ARCHIVE}", f"--zone={plan.zone}",
+        ))
+        self.executor.run(
+            ssh_argv(base, plan.layout.vm_name, plan.zone, ("sudo", "bash", "-s")),
+            input_text=remote_harness_overlay_script(
+                archive_sha256=str(overlay["archive_sha256"]),
+                remote_root=self.settings.remote_root,
+            ),
+        )
 
     def _install_live_tracking(self, plan: RunPlan) -> None:
         """Install the isolated collector before starting the analyst service."""
@@ -2519,6 +2553,98 @@ def create_runtime_source_archive(repo_root: Path, destination: Path) -> None:
                             recursive=False,
                             filter=normalize_tar_info,
                         )
+
+
+def _git_output(repo_root: Path, *arguments: str) -> subprocess.CompletedProcess[bytes]:
+    return subprocess.run(
+        ("git", "-C", str(repo_root), *arguments),
+        capture_output=True,
+        check=False,
+    )
+
+
+def create_harness_overlay(repo_root: Path, destination_dir: Path) -> dict[str, Any]:
+    """Archive the committed Inspect harness of this checkout for one run VM.
+
+    The archive is built from ``HEAD`` with ``git archive`` so it is independent of the
+    working tree, line-ending conversion and untracked files. Uncommitted harness changes
+    are rejected: the recorded commit must identify the code that ran.
+    """
+    commit = git_commit(repo_root)
+    if commit is None:
+        raise RuntimeError("--harness-overlay requires a git checkout with a commit")
+    status = _git_output(repo_root, "status", "--porcelain", "--", *_HARNESS_OVERLAY_PATHS)
+    if status.returncode != 0 or status.stdout.strip():
+        raise RuntimeError(
+            "--harness-overlay requires committed harness changes; commit or stash: "
+            + status.stdout.decode(errors="replace").strip()
+        )
+    tree = _git_output(repo_root, "ls-tree", "-r", "HEAD", "--", *_HARNESS_OVERLAY_PATHS)
+    files: dict[str, str] = {}
+    for line in tree.stdout.decode().splitlines():
+        metadata, _, path = line.partition("\t")
+        files[path] = metadata.split()[2]
+    if tree.returncode != 0 or not files:
+        raise RuntimeError("harness overlay paths are missing from HEAD")
+    # Force raw blob bytes: with core.autocrlf=true, git archive would emit CRLF files.
+    tarball = _git_output(
+        repo_root, "-c", "core.autocrlf=false", "-c", "core.eol=lf",
+        "archive", "--format=tar", "HEAD", "--", *_HARNESS_OVERLAY_PATHS,
+    )
+    if tarball.returncode != 0:
+        raise RuntimeError("git archive failed: " + tarball.stderr.decode(errors="replace").strip())
+    destination_dir.mkdir(parents=True, exist_ok=True)
+    archive = destination_dir / _HARNESS_OVERLAY_ARCHIVE
+    with archive.open("wb") as raw_output:
+        with gzip.GzipFile(filename="", fileobj=raw_output, mode="wb", mtime=0) as compressed:
+            compressed.write(tarball.stdout)
+    changed: list[str] | None = None
+    names = _git_output(
+        repo_root, "diff", "--name-status", UPSTREAM_HARNESS_COMMIT, "HEAD", "--", *_HARNESS_OVERLAY_PATHS
+    )
+    if names.returncode == 0:
+        changed = [line.replace("\t", " ") for line in names.stdout.decode().splitlines() if line]
+        diff = _git_output(repo_root, "diff", UPSTREAM_HARNESS_COMMIT, "HEAD", "--", *_HARNESS_OVERLAY_PATHS)
+        (destination_dir / "harness.diff").write_bytes(diff.stdout)
+    return {
+        "enabled": True,
+        "git_commit": commit,
+        "paths": list(_HARNESS_OVERLAY_PATHS),
+        "archive_sha256": file_sha256(archive),
+        "git_blobs": files,
+        "upstream_commit": UPSTREAM_HARNESS_COMMIT,
+        "changed_files_vs_upstream": changed,
+    }
+
+
+def remote_harness_overlay_script(*, archive_sha256: str, remote_root: str) -> str:
+    """Swap the overlaid harness directories on the run VM, keeping the baked copy."""
+    if re.fullmatch(r"[0-9a-f]{64}", archive_sha256) is None:
+        raise ValueError("invalid harness overlay checksum")
+    paths = " ".join(shlex.quote(path) for path in _HARNESS_OVERLAY_PATHS)
+    root = shlex.quote(remote_root)
+    return f"""set -euo pipefail
+overlay_home=/home/"${{SUDO_USER:-$USER}}"
+archive="$overlay_home/{_HARNESS_OVERLAY_ARCHIVE}"
+printf '%s  %s\\n' {shlex.quote(archive_sha256)} "$archive" | sha256sum --check -
+backup=/opt/bixbench3/.harness-baseline
+test ! -e "$backup"
+staging="$(mktemp -d)"
+tar -xzf "$archive" -C "$staging"
+mkdir -p "$backup"
+for relative in {paths}; do
+  test -d "$staging/$relative"
+  test -d "/opt/bixbench3/$relative"
+  mkdir -p "$backup/$(dirname "$relative")"
+  mv "/opt/bixbench3/$relative" "$backup/$relative"
+  cp -a "$staging/$relative" "/opt/bixbench3/$relative"
+  chown -R root:root "/opt/bixbench3/$relative"
+  (cd /opt/bixbench3 && diff -rq -x __pycache__ "$backup/$relative" "$relative" || true) >> {root}/harness_overlay_changes.txt
+done
+printf '%s\\n' {shlex.quote(archive_sha256)} > {root}/harness_overlay.sha256
+rm -rf "$staging" "$archive"
+echo "harness overlay installed: $(wc -l < {root}/harness_overlay_changes.txt) path(s) differ from the image"
+"""
 
 
 def runtime_archive_path_excluded(path: Path) -> bool:

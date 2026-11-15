@@ -23,6 +23,24 @@ Boot disk defaults to **pd-standard** for parallel runs under the shared SSD quo
 
 The shared project's CPU quota is 12. Two 6-vCPU analysts consume all of it: stage data with the temporary 4-vCPU loader before both analysts are active. The dashboard now runs on Cloud Run, so it does not consume Compute Engine CPU quota. SSD quota is 250 GB; standard-disk quota is 2,048 GB at last verification. Input disks remain pd-balanced. Check current usage before launch; don't stop a teammate's VM to free quota.
 
+## Harness experiments: `--harness-overlay`
+
+The run VM executes the harness baked into the runtime machine image (`/opt/bixbench3`). `bixbench3 run` only copies the
+case, the manifest, `run.sh` and the collector, so **a harness change on your branch does not reach the VM by itself**: the
+run would silently repeat the baseline.
+
+For any experiment that edits `src/bixbench3/inspect_harness/`, commit your change and add `--harness-overlay` to
+`scripts/run_team.py` (or to `bixbench3 run`). Before the analyst starts, the runner then:
+
+- archives `src/bixbench3/inspect_harness` from `HEAD` with `git archive` (uncommitted changes are rejected);
+- copies it to the VM, verifies its checksum, and swaps it in; the image's copy is kept in `/opt/bixbench3/.harness-baseline`;
+- records the commit, archive checksum, file blobs and files changed versus upstream `d0e0bbb` under `harness_overlay` in
+  `run_manifest.json`, and saves `harness.diff` next to the local manifest.
+
+Only the Inspect agent harness is overlaid. Grading, the process judge, the network gateway and the sandbox image are
+untouched, and dependency changes (`pyproject.toml`, `uv.lock`) or sandbox image changes still require a new runtime image.
+Without the flag nothing changes: baseline reruns such as v2a must not use it.
+
 ## Dashboard
 
 Cloud Run URL: https://bixdash-385251430960.us-central1.run.app

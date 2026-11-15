@@ -79,6 +79,7 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--condition", default="baseline", help="dashboard experiment condition")
     run.add_argument("--tracking-grade-every", type=int, default=0, help="partial grading interval in seconds; 0 disables it")
     run.add_argument("--dashboard-uri", default="", help="central bixdash bucket prefix (gs://BUCKET/_dashboard); default: <results bucket>/_dashboard")
+    run.add_argument("--harness-overlay", action="store_true", help="copy the committed src/bixbench3/inspect_harness of this checkout onto the run VM before the analyst starts; without it the VM runs the harness baked into the runtime image")
     run.add_argument("--owner", default="", help="team member running the experiment (shown on the dashboard)")
     run.add_argument("--task11-runtime", action="store_true", help="use the task-11-only runtime without licensed 10x tools")
     run.add_argument(
@@ -163,7 +164,7 @@ def _run(arguments: argparse.Namespace) -> int:
         arguments.effort,
         user_model_args=model_args,
     )
-    runner = _runner(arguments.project, machine_type=arguments.machine_type, task11_runtime=arguments.task11_runtime, boot_disk_gb=arguments.boot_disk_gb, cost_limit=arguments.cost_limit, track_live=arguments.track_live, run_description=arguments.run_description, run_condition=arguments.condition, tracking_grade_every=arguments.tracking_grade_every, boot_disk_type=arguments.boot_disk_type, runtime_image=arguments.runtime_image, no10x_runtime=arguments.no10x_runtime, runtime_boot_device=arguments.runtime_boot_device, boot_disk_source=arguments.boot_disk_source, dashboard_uri=arguments.dashboard_uri, owner=arguments.owner)
+    runner = _runner(arguments.project, machine_type=arguments.machine_type, task11_runtime=arguments.task11_runtime, boot_disk_gb=arguments.boot_disk_gb, cost_limit=arguments.cost_limit, track_live=arguments.track_live, run_description=arguments.run_description, run_condition=arguments.condition, tracking_grade_every=arguments.tracking_grade_every, boot_disk_type=arguments.boot_disk_type, runtime_image=arguments.runtime_image, no10x_runtime=arguments.no10x_runtime, runtime_boot_device=arguments.runtime_boot_device, boot_disk_source=arguments.boot_disk_source, dashboard_uri=arguments.dashboard_uri, owner=arguments.owner, harness_overlay=arguments.harness_overlay)
     if arguments.track_live and not arguments.results_bucket:
         raise ValueError("--track-live requires --results-bucket")
     result = runner.run_task(
@@ -281,7 +282,7 @@ def _print_judge_summary(result: dict[str, Any], output_root: Path) -> None:
     print(f"Process judge file: {output_root / 'judge.json'}")
 
 
-def _runner(project: str, *, machine_type: str = RUN_MACHINE_TYPE, task11_runtime: bool = False, boot_disk_gb: int = 500, cost_limit: float | None = None, track_live: bool = False, run_description: str = "", run_condition: str = "baseline", tracking_grade_every: int = 0, boot_disk_type: str = "pd-balanced", runtime_image: str | None = None, no10x_runtime: bool = False, runtime_boot_device: str = "persistent-disk-0", boot_disk_source: str | None = None, dashboard_uri: str = "", owner: str = "") -> GCPRunner:
+def _runner(project: str, *, machine_type: str = RUN_MACHINE_TYPE, task11_runtime: bool = False, boot_disk_gb: int = 500, cost_limit: float | None = None, track_live: bool = False, run_description: str = "", run_condition: str = "baseline", tracking_grade_every: int = 0, boot_disk_type: str = "pd-balanced", runtime_image: str | None = None, no10x_runtime: bool = False, runtime_boot_device: str = "persistent-disk-0", boot_disk_source: str | None = None, dashboard_uri: str = "", owner: str = "", harness_overlay: bool = False) -> GCPRunner:
     if boot_disk_type not in {"pd-balanced", "pd-standard", "pd-ssd"}:
         raise ValueError("unsupported boot disk type")
     if no10x_runtime and not runtime_image:
@@ -308,6 +309,7 @@ def _runner(project: str, *, machine_type: str = RUN_MACHINE_TYPE, task11_runtim
         run_description=run_description, run_condition=run_condition,
         tracking_grade_every=tracking_grade_every,
         dashboard_uri=dashboard_uri.rstrip("/"), run_owner=owner,
+        harness_overlay=harness_overlay,
     )
     if task11_runtime:
         settings = replace(settings, runtime_image_name="bixbench3-runtime-v1-0-0-r7-task11-no10x")
