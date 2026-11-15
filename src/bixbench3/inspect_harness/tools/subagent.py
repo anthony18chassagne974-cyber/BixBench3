@@ -41,6 +41,13 @@ from inspect_ai.model._generate_config import active_generate_config
 from inspect_ai.tool import Tool, ToolError, bash_session, python, text_editor, tool
 from inspect_ai.util import message_limit, store
 
+from ..run_memory import (
+    SUBAGENT_MEMORY_RULES,
+    absorb_subagent,
+    build_pack,
+    recall_tool,
+    with_capture,
+)
 from .web_access import request_web_access
 
 MAX_DEPTH = 2  # 0 = main agent, 1 = planner / artifact builder, 2 = brick worker (no further sub-agents)
@@ -71,7 +78,7 @@ Rules:
 - If something blocks you, try reasonable fixes; if you still cannot finish, stop and report
   exactly what failed, what you tried and what partial files exist.
 - When done, call submit() with a short report: output paths, what you checked, any issues.
-"""
+""" + SUBAGENT_MEMORY_RULES
 
 
 def _now() -> str:
@@ -132,12 +139,13 @@ def subagent_model() -> Model:
     return get_model(str(active), config=config, **(getattr(active, "model_args", None) or {}))
 
 
-def _sub_tools(depth: int, number: int) -> list[Tool]:
+def _sub_tools(depth: int, number: int, name: str) -> list[Tool]:
     tools: list[Tool] = [
-        bash_session(timeout=600, instance=f"subagent-{number}"),  # own shell: no shared cwd/jobs
-        python(timeout=600),
-        text_editor(timeout=120),
+        with_capture(bash_session(timeout=600, instance=f"subagent-{number}"), name),  # own shell: no shared cwd/jobs
+        with_capture(python(timeout=600), name),  # run memory: capture read-only inspections
+        with_capture(text_editor(timeout=120), name),
         request_web_access(),
+        recall_tool(),  # run memory
     ]
     if depth < MAX_DEPTH:
         tools += [run_subagent(depth=depth + 1), run_subagents(depth=depth + 1)]
@@ -162,15 +170,17 @@ async def _run_one(role: str, brief: str, depth: int) -> str:
     status = "ok"
     limit = MESSAGE_LIMITS.get(depth, 300)
     try:
+        pack = await build_pack(brief, name)  # run memory: conventions + most relevant known facts
+        full_brief = brief + ("\n\n" + pack if pack else "")
         agent = react(
             name=name,
             description=f"sub-agent ({role})",
             prompt=SUBAGENT_INSTRUCTIONS,
-            tools=_sub_tools(depth, number),
+            tools=_sub_tools(depth, number, name),
             model=subagent_model(),
             submit=AgentSubmit(answer_only=True),
         )
-        result, limit_error = await run(agent, brief, limits=[message_limit(limit)], name=name)
+        result, limit_error = await run(agent, full_brief, limits=[message_limit(limit)], name=name)
         report = (result.output.completion or "").strip()
         if limit_error is not None:
             status = "message_limit"
@@ -182,6 +192,11 @@ async def _run_one(role: str, brief: str, depth: int) -> str:
     except Exception as error:  # report, never crash the caller
         status = "error"
         report = f"[sub-agent failed: {type(error).__name__}: {str(error)[:500]}]"
+
+    try:  # run memory: store LEARNED items and produced files; the caller gets the short report
+        report = await absorb_subagent(report, brief, name)
+    except Exception as error:
+        report += f"\n[run memory: could not store this sub-agent's results: {type(error).__name__}]"
 
     state = store().get(STORE_KEY) or state
     state["active"] = max(0, state.get("active", 1) - 1)

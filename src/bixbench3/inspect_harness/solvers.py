@@ -7,6 +7,7 @@ from inspect_ai.tool import bash_session, python, text_editor
 from inspect_ai.util import sandbox
 
 from .model_info import register_model_info
+from .run_memory import recall_tool, record_convention, with_capture
 from .tools import request_web_access, run_subagent, run_subagents
 
 register_model_info()
@@ -16,12 +17,14 @@ register_model_info()
 def bixbench3_agent() -> Agent:
     return react(
         tools=[
-            bash_session(timeout=600),
-            python(timeout=600),
-            text_editor(timeout=120),
+            with_capture(bash_session(timeout=600), "orchestrator"),  # run memory: capture inspections
+            with_capture(python(timeout=600), "orchestrator"),
+            with_capture(text_editor(timeout=120), "orchestrator"),
             request_web_access(),
             run_subagent(depth=1),  # v4/v5 dag-orchestrator
             run_subagents(depth=1),  # v5: one dependency level in parallel
+            record_convention(),  # run memory
+            recall_tool(),  # run memory
         ],
         compaction=CompactionAuto(),
     )
