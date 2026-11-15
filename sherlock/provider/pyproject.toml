@@ -1,0 +1,16 @@
+[project]
+name = "bb3-sherlock"
+version = "0.1.0"
+description = "Apptainer sandbox provider for running BixBench3 on Stanford Sherlock"
+requires-python = ">=3.12"
+dependencies = []
+
+[project.entry-points.inspect_ai]
+bb3_sherlock = "bb3_sherlock._registry"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["bb3_sherlock"]
