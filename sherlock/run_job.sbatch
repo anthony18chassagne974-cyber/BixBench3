@@ -203,6 +203,21 @@ COLLECT="python3 $REPO/tools/bixdash/vm/collect.py --grade-every 0"
 ( while true; do sleep 60; $COLLECT >> "$JOB/collector.log" 2>&1; sleep 240; done ) &
 COLLECTOR=$!
 
+# --- scancel / time limit: publish a final "cancelled" dashboard snapshot before exiting
+on_term() {
+  echo "[sherlock] job cancelled or timed out"
+  kill "$COLLECTOR" 2>/dev/null; COLLECTOR=""
+  python3 - "$RUN_ROOT/status.json" <<'PY'
+import json, sys
+from datetime import UTC, datetime
+json.dump({"phase": "cancelled", "status": "failed", "updated_at": datetime.now(UTC).isoformat(),
+           "remote_exit_status": 143, "systemd_unit": "slurm"}, open(sys.argv[1], "w"), indent=2)
+PY
+  timeout 25 $COLLECT >> "$JOB/collector.log" 2>&1
+  exit 143
+}
+trap on_term TERM INT
+
 # --- the run: official run.sh inside the python:3.12 runner (exact uv.lock environment)
 apptainer exec --cleanenv --env-file "$JOB/runner.env" --pwd "$SRC" \
   --bind "$JOB" --bind "$SECRETS" --bind "$BB3" --bind "$DATA_DIR:$DATA_DIR:ro" \

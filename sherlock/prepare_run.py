@@ -34,6 +34,16 @@ from bixbench3.gcp_runner import (
 TEAM_CONFIG = Path(__file__).resolve().parents[1] / "configs" / "team-6vcpu.json"
 
 
+def _git_info(path: Path) -> dict:
+    import subprocess
+
+    def git(*a: str) -> str:
+        return subprocess.run(["git", "-C", str(path), *a], capture_output=True, text=True).stdout.strip()
+
+    return {"commit": git("rev-parse", "HEAD"), "branch": git("rev-parse", "--abbrev-ref", "HEAD"),
+            "dirty": bool(git("status", "--porcelain", "--", "src"))}
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--task", required=True)
@@ -128,6 +138,7 @@ def main() -> int:
             "owner": args.owner or None,
         },
         "harness_overlay": overlay,
+        "checkout": _git_info(args.checkout.resolve()),
         "prepared_at": datetime.now(UTC).isoformat(),
         "status": "created",
         "phase": "provisioning",
